@@ -204,10 +204,10 @@ function detectKind(sh) {
   const np = ["010", "011", "012", "013", "014", "020", "021", "022", "100", "101", "200"].filter(x => cs.has(x)).length;
   return nb >= 4 ? "B" : (nb === 0 && np >= 7 ? "P" : "");
 }
-function profileCol(kindRow, prof) { return prof === 3 ? (C.custom?.[kindRow[1]] || "") : kindRow[prof === 1 ? 2 : 3]; }
+function profileCol(kindRow, prof) { return prof === 3 ? (C.custom?.[kindRow[1]] || "") : prof === 4 ? (kindRow[6] || "") : kindRow[prof === 1 ? 2 : 3]; }
 function mapCodes(kind) {
   const cs = new Set();
-  for (const m of S.mapping) if (m[0] === kind) for (const p of [1, 2, 3]) for (let t of String(profileCol(m, p) || "").split(",")) {
+  for (const m of S.mapping) if (m[0] === kind) for (const p of [1, 2, 3, 4]) for (let t of String(profileCol(m, p) || "").split(",")) {
     t = t.trim(); if (!t) continue; if ("*-~+!".includes(t[0])) t = t.slice(1).trim(); const c = normCode(t); if (c) cs.add(c);
   }
   return cs;
@@ -270,11 +270,15 @@ function mergeForms(a, b) {
 }
 function chooseProfile(f, kind) {
   if (C.settings.variant >= 1) return C.settings.variant;
-  const sc = [0, 0, 0, 0];
-  for (const [form, kw, full, sme] of S.signs) {
+  const sc = [0, 0, 0, 0, 0];
+  for (const [form, kw, full, sme, nsfo] of S.signs) {
     if (form !== kind) continue;
-    for (const [p, code] of [[1, full], [2, sme]]) { const c = f.codes.get(normCode(code)); if (c && c.lab.includes(normTxt(kw))) sc[p]++; }
+    for (const [p, code] of [[1, full], [2, sme], [4, nsfo]]) { if (!code) continue; const c = f.codes.get(normCode(code)); if (c && c.lab.includes(normTxt(kw))) sc[p]++; }
   }
+  // НСФО (малый бизнес): коды 01–23, итог активов — строка 10
+  if (kind === "B") { const c10 = f.codes.get("010"), c01 = f.codes.get("001"); if (c10 && /итого\s+актив/.test(c10.lab) && c01 && /денежн/.test(c01.lab)) sc[4] += 3; }
+  if (kind === "P") { const c01 = f.codes.get("001"), c13 = f.codes.get("013"); if (c01 && /доход/.test(c01.lab) && c13 && /прибыл/.test(c13.lab)) sc[4] += 3; }
+  if (sc[4] > sc[1] && sc[4] > sc[2]) return 4;
   return sc[2] > sc[1] ? 2 : 1;
 }
 function evalSpec(spec, f, w) {
@@ -290,7 +294,7 @@ function evalSpec(spec, f, w) {
   return { v: s, found, missing };
 }
 const SRC_TXT = { B: "Баланс (ф.1)", P: "ОПиУ (ф.2)", C: "ОДДС (ф.3)" };
-const PROF_TXT = { 1: "полная форма (приказ №404)", 2: "форма МСБ", 3: "свой вариант" };
+const PROF_TXT = { 1: "полная форма (приказ №404)", 2: "форма МСБ", 3: "свой вариант", 4: "форма НСФО (малый бизнес)" };
 async function importFiles(files, k, pid, askUnits) {
   const report = [];
   const pp = prevPid(pid);
