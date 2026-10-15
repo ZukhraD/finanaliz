@@ -13,7 +13,7 @@ function render() {
   if (LOCK.on && !LOCK.key) return renderLock();
   if (!C) return renderClients();
   PROB = problems();
-  const steps = [["card", "Карточка"], ["bal", "Баланс"], ["odr", "ОПиУ"], ["cf", "ДДС"], ["tax", "Налоги"], ["bank", "Банк"], ["credit", "Кредитная история"], ["coll", "Залог и гаранты"], ["cons", "Свод и прогноз"], ["an", "Анализ"], ["prob", "Проблемы"], ["concl", "Заключение"]];
+  const steps = [["card", "Карточка"], ["trust", "Благонадёжность"], ["bal", "Баланс"], ["odr", "ОПиУ"], ["cf", "ДДС"], ["tax", "Налоги"], ["bank", "Банк"], ["credit", "Кредитная история"], ["coll", "Залог и гаранты"], ["cons", "Свод и прогноз"], ["an", "Анализ"], ["prob", "Проблемы"], ["concl", "Заключение"]];
   if (!steps.some(st => st[0] === PAGE) && PAGE !== "map" && PAGE !== "log" && PAGE !== "norms") PAGE = "card";
   document.body.innerHTML = `
   <div class="app">
@@ -353,7 +353,7 @@ function discrepancies() {
 }
 function pageProb() {
   const pers = C.periods;
-  const groups = [["card", "Карточка"], ["bal", "Баланс"], ["odr", "ОПиУ"], ["cf", "ДДС"], ["tax", "Налоги"], ["bank", "Банк"], ["credit", "Кредитная история"], ["coll", "Залог и гаранты"], ["cons", "Свод группы и прогноз"], ["an", "Анализ"]];
+  const groups = [["card", "Карточка"], ["trust", "Благонадёжность"], ["bal", "Баланс"], ["odr", "ОПиУ"], ["cf", "ДДС"], ["tax", "Налоги"], ["bank", "Банк"], ["credit", "Кредитная история"], ["coll", "Залог и гаранты"], ["cons", "Свод группы и прогноз"], ["an", "Анализ"]];
   const cnt = s => PROB.filter(p => p.sev === s).length;
   let h = `<div class="pagehead"><div class="lead"><h1>Проблемы и решения</h1><p>Всё, что мешает выводу: ошибки и пропуски в данных, расхождения, зоны риска и дефициты в прогнозе — с подсказкой, что делать. Ячейки с проблемами подсвечены на страницах форм.</p></div></div>
     <div class="chips" style="margin-bottom:14px">${["crit", "risk", "chk", "nd"].map(s => `<span class="st ${s}">${SEV[s]}: ${cnt(s)}</span>`).join("")}</div>`;
@@ -429,7 +429,7 @@ function pageNorms() {
   ${keys.map(k => { const o = RATN[k] || {}, d = RAT_DEF[k]; const cell = f => `<td class="cell"><input class="inp num" data-norm="${k}" data-f="${f}" value="${esc(o[f] !== undefined ? show(k, o[f]) : "")}" placeholder="${esc(show(k, d[f]))}"></td>`;
     return `<tr><td class="lab">${esc(RAT[k].label)}<span class="formula">${esc(RAT[k].formula || "")}</span></td><td>${esc(RAT[k].dir)}</td>${cell("green")}${cell("red")}${d.crit === null || d.crit === undefined ? "<td></td>" : cell("crit")}<td>${unit(k)}</td></tr>`; }).join("")}</tbody></table></div>`;
 }
-const PAGES = { card: pageCard, bal: () => pageForm("bal"), odr: () => pageForm("odr"), cf: () => pageForm("cf"), tax: pageTax, bank: pageBank, credit: pageCredit, coll: pageColl, cons: pageCons, an: pageAn, prob: pageProb, concl: pageConcl, map: pageMap, log: pageLog, norms: pageNorms };
+const PAGES = { card: pageCard, bal: () => pageForm("bal"), odr: () => pageForm("odr"), cf: () => pageForm("cf"), tax: pageTax, bank: pageBank, credit: pageCredit, coll: pageColl, trust: pageTrust, cons: pageCons, an: pageAn, prob: pageProb, concl: pageConcl, map: pageMap, log: pageLog, norms: pageNorms };
 
 /* ---------- диалоги */
 function dialog(title, body, buttons) {

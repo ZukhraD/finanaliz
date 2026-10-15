@@ -200,6 +200,7 @@ function problems() {
   // налоговые декларации и банковские обороты
   taxProblems(add);
   creditProblems(add);
+  trustProblems(add);
   // консолидация
   if (nComp() > 1) pers.forEach(p => {
     for (const [lab, st, d] of elimChecks(p.id)) if (st === "bad") add(lab.includes("подтвержд") ? "chk" : "risk", "elim", `Свод группы, ${p.label}: ${lab.toLowerCase()}`, isNum(d) ? `Разница ${fmt(d)}` : "",

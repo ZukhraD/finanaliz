@@ -310,6 +310,7 @@ function conclusionHTML(forWord, imgs) {
   ${H2("Заёмщик и запрос")}<p><b>${esc(c.name)}</b>${c.bin ? ", БИН " + esc(c.bin) : ""}. ${esc(c.activity || "")}${c.region ? " Регион: " + esc(c.region) + "." : ""}</p>${okedListText(C) ? `<p>ОКЭД: ${esc(okedListText(C))}</p>` : ""}
   <p>Запрос: ${esc(c.product || "")}, ${isNum(c.amount) ? fmt(c.amount) + " тыс. тг" : "сумма не указана"}; цель — ${esc((c.purpose || "").toLowerCase())}. Объект анализа: ${esc(objName(obj))}; периоды: ${esc(pers.map(p => p.label).join(", "))}.</p>`;
   if (nComp() > 1) h += `<table ${T}><thead><tr><th${th} style="text-align:left">Компания</th><th${th}>БИН</th><th${th}>Роль</th><th${th}>Форма</th><th${th}>Режим</th></tr></thead><tbody>${C.companies.map((x, i) => `<tr><td style="text-align:left">${esc(compName(i + 1))}</td><td>${esc(x.bin || "")}</td><td>${esc(x.role)}</td><td>${esc(x.form)}</td><td>${esc(x.regime)}</td></tr>`).join("")}</tbody></table>`;
+  h += `${H2("Благонадёжность")}${trustConclHTML() || "<p>Проверка не проведена.</p>"}`;
   // 2. финансы
   h += `${H2("Финансовое положение")}<ul>${autoFinText(obj).map(x => `<li>${esc(x)}</li>`).join("")}</ul>
   <table ${T}><thead><tr><th${th} style="text-align:left">Показатель</th><th${th}>${esc(pers[perIdx(P)]?.label || "")}</th><th${th}>${esc(pers[perIdx(L)]?.label || "")}</th><th${th}>Оценка</th></tr></thead><tbody>
