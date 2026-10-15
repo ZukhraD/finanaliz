@@ -189,6 +189,8 @@ function problems() {
         add("chk", "cf", `${nm}, ${p.label}: деньги на начало по ОДДС не равны деньгам в балансе за «${pers[i - 1].label}»`, `ОДДС ${fmt(g("cf140"))}, баланс ${fmt(val(k, "cash", pp))}`, "Для нарастающего итога строка 140 — на начало года; иначе проверьте единицы и период.", [{ k, key: "cf140", pid }]);
     });
   }
+  // налоговые декларации и банковские обороты
+  taxProblems(add);
   // консолидация
   if (nComp() > 1) pers.forEach(p => {
     for (const [lab, st, d] of elimChecks(p.id)) if (st === "bad") add(lab.includes("подтвержд") ? "chk" : "risk", "elim", `Свод группы, ${p.label}: ${lab.toLowerCase()}`, isNum(d) ? `Разница ${fmt(d)}` : "",

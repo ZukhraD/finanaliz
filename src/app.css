@@ -330,3 +330,15 @@ table.data tr.calc td.yr { background: #EDEDEB; }
 .hblue { padding: 36px 42px 34px; }
 .hside { grid-template-rows: auto auto; align-content: start; }
 .hplat { padding: 22px 30px 24px; }
+
+/* налоги и банк */
+dialog.wide { width: min(980px, 96vw); }
+dialog.wide .db { max-height: 72vh; }
+table.data.dk select.inp { width: 100%; max-width: 560px; }
+table.data.dk td.cell input, table.data.bk td.cell input { min-width: 150px; }
+table.data.bk td.lab input { max-width: 170px; }
+table.data.bk td.bad { box-shadow: inset 0 0 0 2px #FFB020; background: #FFF6E5; }
+table.rmap.tax td.v { min-width: 150px; }
+table.rmap.tax td .pertitle { display: block; }
+details > summary { cursor: pointer; color: var(--blue, #023DFF); font-size: 13px; }
+table.data td.lab .formula { display: block; font-family: var(--note); font-size: 11px; color: var(--muted); font-weight: 400; }

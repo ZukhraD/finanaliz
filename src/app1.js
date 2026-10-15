@@ -74,7 +74,7 @@ function newClient(name) {
     companies: [{ name: "", bin: "", role: S.lists.role[0], form: S.lists.form[0], vat: "Да", regime: S.lists.regime[0] }],
     periods: [y - 3, y - 2, y - 1].map(yy => ({ id: uid(), label: String(yy), date: `${yy}-12-31`, basis: "Годовой", months: 12 })),
     obj: 0, data: {}, src: {}, elim: {}, elimOk: {}, concl: { text: "", decision: "", conditions: "", status: "Черновик" }, log: [],
-    custom: {}, settings: { units: "auto", prev: false }
+    custom: {}, settings: { units: "auto", prev: false }, decl: [], bank: [], dset: { pct: 0.02, bpct: 0.1 }
   };
 }
 function demoClient() {
@@ -87,6 +87,7 @@ function demoClient() {
   for (const p of c.periods) c.elimOk[p.id] = true;
   c.fc = JSON.parse(JSON.stringify(d.fc));
   c.demo = true;
+  demoDocs(c);
   return c;
 }
 let C = null;          // открытый клиент

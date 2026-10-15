@@ -12,7 +12,7 @@ const CHK_TXT = { ok: ["ok", "ОК"], bad: ["crit", "Расхождение"], n
 function render() {
   if (!C) return renderClients();
   PROB = problems();
-  const steps = [["card", "Карточка"], ["bal", "Баланс"], ["odr", "ОПиУ"], ["cf", "ДДС"], ["cons", "Свод и прогноз"], ["an", "Анализ"], ["prob", "Проблемы"], ["concl", "Заключение"]];
+  const steps = [["card", "Карточка"], ["bal", "Баланс"], ["odr", "ОПиУ"], ["cf", "ДДС"], ["decl", "Налоги и банк"], ["cons", "Свод и прогноз"], ["an", "Анализ"], ["prob", "Проблемы"], ["concl", "Заключение"]];
   if (!steps.some(st => st[0] === PAGE) && PAGE !== "map" && PAGE !== "log") PAGE = "card";
   document.body.innerHTML = `
   <div class="app">
@@ -348,7 +348,7 @@ function discrepancies() {
 }
 function pageProb() {
   const pers = C.periods;
-  const groups = [["card", "Карточка"], ["bal", "Баланс"], ["odr", "ОПиУ"], ["cf", "ДДС"], ["cons", "Свод группы и прогноз"], ["an", "Анализ"]];
+  const groups = [["card", "Карточка"], ["bal", "Баланс"], ["odr", "ОПиУ"], ["cf", "ДДС"], ["decl", "Налоги и банк"], ["cons", "Свод группы и прогноз"], ["an", "Анализ"]];
   const cnt = s => PROB.filter(p => p.sev === s).length;
   let h = `<div class="pagehead"><div class="lead"><h1>Проблемы и решения</h1><p>Всё, что мешает выводу: ошибки и пропуски в данных, расхождения, зоны риска и дефициты в прогнозе — с подсказкой, что делать. Ячейки с проблемами подсвечены на страницах форм.</p></div></div>
     <div class="chips" style="margin-bottom:14px">${["crit", "risk", "chk", "nd"].map(s => `<span class="st ${s}">${SEV[s]}: ${cnt(s)}</span>`).join("")}</div>`;
@@ -370,7 +370,8 @@ function pageProb() {
 function riskSummary(obj) {
   const L = lastPid(), cnt = { ok: 0, chk: 0, risk: 0, crit: 0, nd: 0 };
   for (const key of Object.keys(RAT)) { const s = rstatus(key, ratio(obj, key, L)); if (s) cnt[s]++; }
-  const disc = discrepancies();
+  let disc = discrepancies();
+  if ((C.decl || []).length || (C.bank || []).length) for (let k = 1; k <= nComp(); k++) disc += taxChecks(k, C.periods[perIdx(L)] || C.periods[0]).filter(c => c.st === "risk").length;
   let miss = 0; for (let k = 1; k <= nComp(); k++) miss += missingInputs(k, L);
   const ind = miss > 0 ? ["nd", "Недостаточно данных"] : cnt.crit > 0 ? ["crit", "Критический риск"] : (cnt.risk > 0 || cnt.chk >= 3 || disc > 0) ? ["chk", "Умеренный риск — требует проверки"] : ["ok", "Приемлемый риск"];
   return { cnt, disc, miss, ind };
@@ -394,6 +395,7 @@ function conclusionHTML(forWord) {
   <h2 style="margin-top:14px">Оценка риска (автоиндикатор)</h2>
   <p><b>${esc(rs.ind[1])}</b>. Показателей в норме: ${rs.cnt.ok}, требуют проверки: ${rs.cnt.chk}, в зоне риска: ${rs.cnt.risk}, критических: ${rs.cnt.crit}. Расхождений в сверках: ${rs.disc}. Незаполненных обязательных строк в последнем периоде: ${rs.miss}.</p>
   ${flagged.length ? `<p>Обратить внимание:</p><ul>${flagged.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+  ${taxConclHTML()}
   <h2 style="margin-top:14px">Выводы аналитика</h2><p class="concl-text">${esc(C.concl.text || "—")}</p>
   <h2 style="margin-top:14px">Рекомендация</h2><p><b>${esc(C.concl.decision || "не выбрана")}</b></p>${C.concl.conditions ? `<p class="concl-text">${esc(C.concl.conditions)}</p>` : ""}
   <p class="small muted" style="margin-top:18px">Аналитик: ${esc(c.analyst || "—")}. Дата: ${esc(c.date || "")}. Статус: ${esc(C.concl.status)}. Автоиндикатор не заменяет решение аналитика.</p>`;
@@ -427,12 +429,12 @@ function pageMap() {
   <div class="tablewrap"><table class="data"><thead><tr><th class="lab">Строка анализатора</th><th style="text-align:left">Полная форма</th><th style="text-align:left">Форма МСБ</th><th style="text-align:left">Свой вариант</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 function pageLog() {
-  const rows = C.log.map(r => `<tr><td class="lab" style="min-width:150px">${new Date(r.t).toLocaleString("ru-RU")}</td><td style="text-align:left">${esc(r.file)}${r.sheet ? " / " + esc(r.sheet) : ""}</td><td style="text-align:left">${esc(r.comp || "")}, ${esc(r.per || "")}</td>
-    <td style="text-align:left;white-space:normal">${r.err ? stChip("crit", "ошибка") + " " + esc(r.err) : `${stChip("ok", SRC_TXT[r.kind])} ${r.n} строк; ${esc(r.prof)}; ${esc(r.units)}${r.over ? "; перезаписано " + r.over : ""}${r.miss?.length ? "; нет кодов: " + esc(r.miss.join(", ")) : ""}`}</td></tr>`).join("");
+  const rows = C.log.map(r => `<tr><td class="lab" style="min-width:150px">${new Date(r.t).toLocaleString("ru-RU")}</td><td style="text-align:left">${esc(r.file)}${r.sheet ? " / " + esc(r.sheet) : ""}</td><td style="text-align:left">${esc([r.comp, r.per].filter(Boolean).join(", "))}</td>
+    <td style="text-align:left;white-space:normal">${r.err ? stChip("crit", "ошибка") + " " + esc(r.err) : r.kind === "PDF" ? stChip("ok", "PDF") + " " + esc(r.note || "") : `${stChip("ok", SRC_TXT[r.kind])} ${r.n} строк; ${esc(r.prof)}; ${esc(r.units)}${r.over ? "; перезаписано " + r.over : ""}${r.miss?.length ? "; нет кодов: " + esc(r.miss.join(", ")) : ""}`}</td></tr>`).join("");
   return `<div class="pagehead"><div class="lead"><h1>Журнал загрузок</h1><p>Что, когда и из какого файла загружено.</p></div></div>
   ${rows ? `<div class="tablewrap"><table class="data"><thead><tr><th class="lab">Когда</th><th style="text-align:left">Файл</th><th style="text-align:left">Куда</th><th style="text-align:left">Результат</th></tr></thead><tbody>${rows}</tbody></table></div>` : `<div class="empty"><h2>Загрузок пока не было</h2><p class="muted">Формы загружаются на странице «Отчётность».</p></div>`}`;
 }
-const PAGES = { card: pageCard, bal: () => pageForm("bal"), odr: () => pageForm("odr"), cf: () => pageForm("cf"), cons: pageCons, an: pageAn, prob: pageProb, concl: pageConcl, map: pageMap, log: pageLog };
+const PAGES = { card: pageCard, bal: () => pageForm("bal"), odr: () => pageForm("odr"), cf: () => pageForm("cf"), decl: pageDecl, cons: pageCons, an: pageAn, prob: pageProb, concl: pageConcl, map: pageMap, log: pageLog };
 
 /* ---------- диалоги */
 function dialog(title, body, buttons) {
@@ -440,7 +442,7 @@ function dialog(title, body, buttons) {
     const d = $("#dlg"); $("#dlgT").textContent = title; $("#dlgB").innerHTML = body;
     $("#dlgF").innerHTML = buttons.map((b, i) => `<button class="btn ${b.primary ? "primary" : ""}" data-i="${i}">${esc(b.t)}</button>`).join("");
     $("#dlgF").onclick = e => { const i = e.target.dataset.i; if (i === undefined) return; const v = buttons[+i].v; const out = typeof v === "function" ? v(d) : v; d.close(); res(out); };
-    d.onclose = () => res(undefined);
+    d.onclose = () => { if (!d.open) res(undefined); };   // событие закрытия предыдущего окна приходит позже — его пропускаем
     d.showModal();
   });
 }
@@ -456,7 +458,8 @@ async function importDialog() {
   const compsOpts = C.companies.map((x, i) => `<option value="${i + 1}"${COMP_TAB === i + 1 ? " selected" : ""}>К${i + 1} · ${esc(x.name || "без названия")}</option>`).join("");
   const body = `<p class="muted">Баланс, ОПиУ и ОДДС в Excel (.xlsx, .xlsm) — можно сразу несколько файлов одной компании за один период. Файлы читаются здесь же, в браузере, и никуда не отправляются.</p>
     <div class="grid2" style="margin:12px 0"><label class="f"><span>Компания</span><select class="inp" id="iComp">${compsOpts}</select></label><label class="f"><span>Период</span><select class="inp" id="iPer">${persOpts}</select></label></div>
-    <label class="drop" id="iDrop"><input type="file" id="iFiles" multiple accept=".xlsx,.xlsm" style="display:none"><span id="iTxt">Перетащите файлы сюда или нажмите, чтобы выбрать</span></label>`;
+    <p class="small muted" style="margin-top:6px">PDF деклараций и справок банков тоже можно перетащить сюда — они попадут на страницу «Налоги и банк».</p>
+    <label class="drop" id="iDrop"><input type="file" id="iFiles" multiple accept=".xlsx,.xlsm,.pdf" style="display:none"><span id="iTxt">Перетащите файлы сюда или нажмите, чтобы выбрать</span></label>`;
   let files = [];
   setTimeout(() => {
     const inp = $("#iFiles"), drop = $("#iDrop"), set = fl => { files = Array.from(fl); $("#iTxt").textContent = files.map(f => f.name).join(", ") || "Файлы не выбраны"; };
@@ -467,7 +470,10 @@ async function importDialog() {
   });
   const sel = await dialog("Загрузить формы отчётности", body, [{ t: "Отменить", v: null }, { t: "Загрузить", primary: true, v: () => ({ k: +$("#iComp").value, pid: $("#iPer").value }) }]);
   if (!sel || !files.length) { if (sel) toast("Файлы не выбраны"); return; }
+  const pdfs = files.filter(f => /\.pdf$/i.test(f.name)); files = files.filter(f => !/\.pdf$/i.test(f.name));
+  if (pdfs.length && !files.length) return runPdfImport(pdfs, sel.k);
   const rep = await importFiles(files, sel.k, sel.pid, askUnits);
+  if (pdfs.length) { await importPdfFiles(pdfs, sel.k); toast("PDF загружены — см. страницу «Налоги и банк»"); }
   COMP_TAB = sel.k; if (!["bal", "odr", "cf"].includes(PAGE)) PAGE = "bal"; render();
   const lines = rep.map(r => `<div class="logline"><b>${esc(r.file)}</b>${r.sheet ? " / " + esc(r.sheet) : ""}: ${r.err ? stChip("crit", "не загружено") + " " + esc(r.err) : `${stChip("ok", SRC_TXT[r.kind])} ${r.n} строк, ${esc(r.prof)}, ${esc(r.units)}${r.over ? `, перезаписано ${r.over}` : ""}${r.miss.length ? `<br><span class="small muted">В файле нет кодов: ${esc(r.miss.join(", "))}</span>` : ""}`}</div>`).join("");
   await dialog("Результат загрузки", lines + `<p class="small muted" style="margin-top:10px">Загруженные значения отмечены полосой слева; проверьте их и страницу «Сверки».</p>`, [{ t: "Готово", primary: true, v: true }]);
@@ -484,7 +490,7 @@ document.addEventListener("click", async e => {
   if (d.delloan !== undefined) { fcParams().loans.splice(+d.delloan, 1); touch(); render(); return; }
   if (d.deloked !== undefined) { C.card.oked.splice(+d.deloked, 1); touch(); render(); return; }
   if (d.delproj !== undefined) { fcParams().projects.splice(+d.delproj, 1); touch(); render(); return; }
-  if (d.open) { C = CLIENTS.find(c => c.id === d.open); CACHE.clear(); PAGE = "card"; render(); return; }
+  if (d.open) { C = CLIENTS.find(c => c.id === d.open); ensureDocs(C); CACHE.clear(); PAGE = "card"; render(); return; }
   if (d.exp) { const c = CLIENTS.find(c => c.id === d.exp); download(fileName(c), JSON.stringify(c, null, 1), "application/json"); return; }
   if (d.del) { const c = CLIENTS.find(c => c.id === d.del); if (await dialog("Удалить клиента?", `<p>«${esc(c.card.name)}» будет удалён из этого браузера. Если нужна копия — сначала сохраните файл клиента.</p>`, [{ t: "Отменить", v: false }, { t: "Удалить", primary: true, v: true }])) { CLIENTS = CLIENTS.filter(x => x !== c); saveAll(true); render(); } return; }
   if (d.delcomp !== undefined) { const i = +d.delcomp; C.companies.splice(i, 1); const nd = {}; Object.keys(C.data).forEach(k => { const n = +k; if (n < i + 1) nd[n] = C.data[k]; else if (n > i + 1) nd[n - 1] = C.data[k]; }); C.data = nd; if (C.obj > nComp()) C.obj = 0; touch(); render(); return; }
@@ -494,7 +500,7 @@ document.addEventListener("click", async e => {
     case "new": { const c = newClient(); CLIENTS.push(c); C = c; PAGE = "card"; saveAll(true); render(); break; }
     case "demo": { const c = demoClient(); CLIENTS.push(c); C = c; PAGE = "an"; saveAll(true); render(); break; }
     case "export": download(fileName(C), JSON.stringify(C, null, 1), "application/json"); toast("Файл клиента сохранён в «Загрузки»"); break;
-    case "import": { const inp = document.createElement("input"); inp.type = "file"; inp.accept = ".json"; inp.onchange = async () => { try { const c = JSON.parse(await inp.files[0].text()); if (!c.card || !c.periods) throw new Error("это не файл клиента"); const ex = CLIENTS.findIndex(x => x.id === c.id); if (ex >= 0) CLIENTS[ex] = c; else CLIENTS.push(c); saveAll(true); C = c; CACHE.clear(); render(); toast("Клиент открыт из файла"); } catch (err) { toast("Не удалось открыть: " + err.message); } }; inp.click(); break; }
+    case "import": { const inp = document.createElement("input"); inp.type = "file"; inp.accept = ".json"; inp.onchange = async () => { try { const c = JSON.parse(await inp.files[0].text()); if (!c.card || !c.periods) throw new Error("это не файл клиента"); const ex = CLIENTS.findIndex(x => x.id === c.id); if (ex >= 0) CLIENTS[ex] = c; else CLIENTS.push(c); saveAll(true); C = c; ensureDocs(C); CACHE.clear(); render(); toast("Клиент открыт из файла"); } catch (err) { toast("Не удалось открыть: " + err.message); } }; inp.click(); break; }
     case "addcomp": C.companies.push({ name: "", bin: "", role: S.lists.role[0], form: S.lists.form[0], vat: "Да", regime: S.lists.regime[0] }); touch(); render(); break;
     case "addper": { const l = C.periods[C.periods.length - 1], y = parseInt(l?.date?.slice(0, 4) || new Date().getFullYear(), 10) + 1; C.periods.push({ id: uid(), label: String(y), date: `${y}-12-31`, basis: "Годовой", months: 12 }); touch(); render(); break; }
     case "addperfirst": { const f = C.periods[0], y = parseInt(f?.date?.slice(0, 4) || new Date().getFullYear(), 10) - 1; C.periods.unshift({ id: uid(), label: String(y), date: `${y}-12-31`, basis: "Годовой", months: 12 }); touch(); render(); break; }
