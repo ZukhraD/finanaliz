@@ -352,7 +352,8 @@ async function readDoc(file) {
   }
   if (/\.(xlsx|xlsm|xls)$/i.test(file.name)) return DocParse.readSheets(await readWorkbook(await file.arrayBuffer()));
   if (/\.csv$/i.test(file.name)) return DocParse.readSheets(csvSheets(await file.arrayBuffer()));
-  throw new Error("поддерживаются PDF, Excel (.xlsx, .xlsm, .xls) и CSV");
+  if (/\.(html?|mht)$/i.test(file.name)) { const pdf = htmlToLines(await file.arrayBuffer()); if (!pdf.pages[0].lines.length) throw new Error("в HTML-файле нет текста"); return DocParse.readLines(pdf); }
+  throw new Error("поддерживаются PDF, HTML, Excel (.xlsx, .xlsm, .xls) и CSV");
 }
 async function importDocs(files, kDef, mode) {
   ensureDocs();
@@ -405,10 +406,10 @@ async function importDocs(files, kDef, mode) {
 }
 async function docDialog(mode) {
   const compsOpts = C.companies.map((x, i) => `<option value="${i + 1}"${COMP_TAB === i + 1 ? " selected" : ""}>К${i + 1} · ${esc(x.name || "без названия")}</option>`).join("");
-  const what = mode === "credit" ? "Кредитные отчёты ПКБ или ГКБ (PDF или Excel)" : mode === "tax" ? "Налоговые декларации (PDF из кабинета налогоплательщика или Excel)" : "Выписки по счетам и справки об оборотах (PDF или Excel из интернет-банка, CSV)";
+  const what = mode === "credit" ? "Кредитные отчёты ПКБ или ГКБ (HTML, PDF или Excel)" : mode === "tax" ? "Налоговые декларации (PDF из кабинета налогоплательщика или Excel)" : "Выписки по счетам и справки об оборотах (PDF или Excel из интернет-банка, CSV)";
   const body = `<p class="muted">${what} — можно сразу несколько файлов. Для сканов суммы вводятся вручную. Файлы читаются здесь же, в браузере, и никуда не отправляются.</p>
     <label class="f" style="margin:12px 0"><span>Компания (если в документе нет БИН из карточки)</span><select class="inp" id="pComp">${compsOpts}</select></label>
-    <label class="drop" id="pDrop"><input type="file" id="pFiles" multiple accept=".pdf,.xlsx,.xlsm,.csv,.xls,application/pdf" style="display:none"><span id="pTxt">Перетащите файлы сюда или нажмите, чтобы выбрать</span></label>`;
+    <label class="drop" id="pDrop"><input type="file" id="pFiles" multiple accept=".pdf,.html,.htm,.xlsx,.xlsm,.csv,.xls,application/pdf,text/html" style="display:none"><span id="pTxt">Перетащите файлы сюда или нажмите, чтобы выбрать</span></label>`;
   let files = [];
   setTimeout(() => {
     const inp = $("#pFiles"), drop = $("#pDrop"), set = fl => { files = Array.from(fl); $("#pTxt").textContent = files.map(f => f.name).join(", ") || "Файлы не выбраны"; };
@@ -715,4 +716,43 @@ function demoDocs(c) {
   if (amt) { c.coll.push({ type: "Недвижимость", desc: "Зерносклад 5 000 т, г. Костанай (вымышл.)", owner: c.companies[0].name, market: Math.round(amt * 0.9), disc: 0.3 }); c.coll.push({ type: "Спецтехника и оборудование", desc: "Зерноуборочные комбайны, 4 ед.", owner: c.companies[1]?.name || c.companies[0].name, market: Math.round(amt * 0.8), disc: 0.5 }); }
   c.guar.push({ name: "Учредитель (вымышленный)", kind: "Учредитель (физ. лицо)", amt: amt || null, note: "личная гарантия" });
   c.bank.push({ id: uid(), kind: "stmt", k: 1, file: "пример", bank: "АО «Пример Банк»", acc: "KZ000000000000000001", cur: "KZT", from: `01.01.${y}`, to: `31.12.${y}`, txs, ov: {}, t: Date.now() });
+}
+
+/* ---------- HTML (например, кредитный отчёт ПКБ): строки таблиц и абзацы → те же «строки с ячейками», что и для PDF */
+function htmlToLines(buf) {
+  const u8 = new Uint8Array(buf);
+  let head = new TextDecoder("latin1").decode(u8.subarray(0, 4096)), cs = (/charset\s*=\s*["']?([\w-]+)/i.exec(head) || [])[1] || "utf-8";
+  if (u8[0] === 0xEF && u8[1] === 0xBB && u8[2] === 0xBF) cs = "utf-8";
+  let text; try { text = new TextDecoder(cs).decode(u8); } catch (e) { text = new TextDecoder("utf-8").decode(u8); }
+  if (/utf-?8/i.test(cs) && text.includes("\uFFFD")) text = new TextDecoder("windows-1251").decode(u8);
+  const doc = new DOMParser().parseFromString(text, "text/html");   // документ инертен: скрипты и картинки не запускаются и не грузятся
+  doc.querySelectorAll("script,style,noscript,template").forEach(e => e.remove());
+  const clean = s => String(s || "").replace(/[\u00A0\s]+/g, " ").trim();
+  const lines = []; let y = 0;
+  const push = cells => { const cs2 = cells.filter(c => c.s); if (!cs2.length) return; lines.push({ y: -(y += 12), fs: 10, cells: cs2, text: cs2.map(c => c.s).join("  "), page: 0 }); };
+  const BLOCK = /^(P|DIV|H[1-6]|LI|SPAN|B|STRONG|TD|TH|LABEL|DT|DD|CAPTION)$/;
+  const walk = el => {
+    for (const ch of el.children) {
+      if (ch.tagName === "TABLE") { for (const tr of ch.querySelectorAll(":scope > tr, :scope > thead > tr, :scope > tbody > tr, :scope > tfoot > tr")) row(tr); continue; }
+      if (ch.querySelector("br") && !ch.querySelector("table, p, div, li")) { for (const part of ch.innerHTML.split(/<br\s*\/?>/i)) { const d = doc.createElement("div"); d.innerHTML = part; const t = clean(d.textContent); if (t) push([{ x: 0, x2: 90, s: t, fs: 10 }]); } continue; }
+      if (ch.querySelector("table, p, div, li, h1, h2, h3, h4, h5, h6") && !/^(SPAN|B|STRONG)$/.test(ch.tagName)) { walk(ch); continue; }
+      if (BLOCK.test(ch.tagName) || ch.children.length === 0) { const t = clean(ch.textContent); if (t) push([{ x: 0, x2: 90, s: t, fs: 10 }]); }
+      else walk(ch);
+    }
+  };
+  const row = tr => {
+    const cells = []; let col = 0; const nested = [];
+    for (const td of tr.children) {
+      if (!/^(TD|TH)$/.test(td.tagName)) continue;
+      const span = Math.max(1, +td.getAttribute("colspan") || 1);
+      const inner = td.querySelector("table");
+      if (inner) nested.push(td);
+      else cells.push({ x: col * 100, x2: col * 100 + 90, s: clean(td.innerText !== undefined && td.innerText ? td.innerText : td.textContent), fs: 10 });
+      col += span;
+    }
+    push(cells);
+    for (const td of nested) walk(td);
+  };
+  walk(doc.body || doc.documentElement);
+  return { pages: [{ lines }], noText: !lines.length };
 }

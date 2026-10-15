@@ -446,10 +446,18 @@ const DocParse = (() => {
       if (!cur) { cur = { status }; out.push(cur); }
       if (cur[k] === undefined) cur[k] = String(v).trim();
     };
+    let thdr = null;   // табличный вид: строка-шапка с названиями полей, ниже — договор в каждой строке
     for (const l of L) {
       const lt = low(l.text);
-      if (/(действующ|текущ|открыт)\S*\s+(договор|кредит|обязательств)/.test(lt) && l.cells.length <= 2) { status = "active"; cur = null; continue; }
-      if (/(завершенн|погашенн|закрыт)\S*\s+(договор|кредит|обязательств)/.test(lt) && l.cells.length <= 2) { status = "closed"; cur = null; continue; }
+      const hk = l.cells.map(c => crLabel(c.s));
+      if (hk.filter(Boolean).length >= 3 && new Set(hk.filter(Boolean)).size >= 3) { thdr = hk; cur = null; continue; }
+      if (thdr && l.cells.length >= 3 && !l.cells.some(c => crLabel(c.s.split(":")[0]) && c.s.includes(":"))) {
+        const rec = { status }; let n = 0;
+        l.cells.forEach((c, i) => { const k = thdr[i]; if (k && c.s.trim()) { rec[k] = c.s.trim(); n++; } });
+        if (n >= 2 && (rec.creditor || rec.bal || rec.amount)) { out.push(rec); cur = null; continue; }
+      }
+      if (/(действующ|текущ|открыт)\S*\s+(договор|кредит|обязательств)/.test(lt) && l.cells.length <= 2) { status = "active"; cur = null; thdr = null; continue; }
+      if (/(завершенн|погашенн|закрыт)\S*\s+(договор|кредит|обязательств)/.test(lt) && l.cells.length <= 2) { status = "closed"; cur = null; thdr = null; continue; }
       for (let i = 0; i < l.cells.length; i++) {
         const s = norm(l.cells[i].s), ci = s.indexOf(":");
         let k = crLabel(ci > 0 ? s.slice(0, ci) : s);
@@ -525,10 +533,14 @@ const DocParse = (() => {
     const kind = pdf.noText ? null : detect(pdf);
     return { pdf, kind, decl: kind === "decl" ? parseDecl(pdf) : null, bank: kind === "bank" ? parseBank(pdf) : null, stmt: kind === "stmt" ? parseStmt(pdf) : null, credit: kind === "credit" ? parseCredit(pdf) : null };
   }
+  function readLines(pdf) {   // уже готовые строки (например, из HTML)
+    const kind = detect(pdf);
+    return { pdf, kind, decl: kind === "decl" ? parseDecl(pdf) : null, bank: kind === "bank" ? parseBank(pdf) : null, stmt: kind === "stmt" ? parseStmt(pdf) : null, credit: kind === "credit" ? parseCredit(pdf) : null };
+  }
   function readSheets(sheets) {
     const pdf = fixExcelDates(sheetToPdf(sheets));
     const kind = detect(pdf);
     return { pdf, kind, decl: kind === "decl" ? parseDecl(pdf) : null, bank: kind === "bank" ? parseBank(pdf) : null, stmt: kind === "stmt" ? parseStmt(pdf) : null, credit: kind === "credit" ? parseCredit(pdf) : null };
   }
-  return { read, readSheets, sheetToPdf, parseDecl, parseBank, parseStmt, parseCredit, classify, classifyDebit, DCATS, clean, pickKeys, isDecl, isBank, isStmt, monthLabel, headerSem, amt, toISO, FORMS, KEYS, CATS };
+  return { read, readSheets, readLines, sheetToPdf, parseDecl, parseBank, parseStmt, parseCredit, classify, classifyDebit, DCATS, clean, pickKeys, isDecl, isBank, isStmt, monthLabel, headerSem, amt, toISO, FORMS, KEYS, CATS };
 })();
