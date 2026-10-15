@@ -118,6 +118,8 @@ function pageCard() {
       <td>${nComp() > 1 ? `<button class="btn ghost danger" data-delcomp="${i}" aria-label="Удалить компанию">Удалить</button>` : ""}</td></tr>`).join("");
   const pers = C.periods.map((p, i) => `<tr><td class="lab">${i + 1}${i === C.periods.length - 1 ? " <span class='small muted'>последний</span>" : ""}</td>
       <td><input class="inp" data-per="${i}" data-f="label" value="${esc(p.label)}"></td>
+      <td><input class="inp" data-per="${i}" data-f="year" inputmode="numeric" value="${esc((p.date || "").slice(0, 4))}" style="max-width:80px"></td>
+      <td><select class="inp" data-per="${i}" data-f="q">${[["", "год"], ["Q1", "1 квартал"], ["Q2", "2 квартал"], ["Q3", "3 квартал"], ["Q4", "4 квартал"]].map(([v, t]) => `<option value="${v}"${(perQ(p) || "") === v ? " selected" : ""}>${t}</option>`).join("")}</select></td>
       <td><input class="inp" data-per="${i}" data-f="date" type="date" value="${esc(p.date)}"></td>
       <td><select class="inp" data-per="${i}" data-f="basis">${opts(S.lists.rep, p.basis)}</select></td>
       <td><input class="inp" data-per="${i}" data-f="months" type="number" min="1" max="12" value="${esc(p.months)}"></td>
@@ -133,9 +135,9 @@ function pageCard() {
   <section class="panel"><h2>Компании (${nComp()} из ${MAX_COMP})</h2><p class="hint">Для группы анализ строится по сумме компаний за вычетом внутригрупповых операций. БИН нужен, чтобы находить внутригрупповые операции.</p>
     <div class="tablewrap" style="max-height:none"><table class="data form"><thead><tr><th class="lab">№</th><th style="text-align:left">Название</th><th style="text-align:left">БИН / ИИН</th><th style="text-align:left">Роль</th><th style="text-align:left">Форма</th><th style="text-align:left">Плательщик НДС</th><th style="text-align:left">Налоговый режим</th><th></th></tr></thead><tbody>${comps}</tbody></table></div>
     ${nComp() < MAX_COMP ? `<p style="margin-top:10px"><button class="btn" data-act="addcomp">Добавить компанию</button></p>` : ""}</section>
-  <section class="panel"><h2>Отчётные периоды (${C.periods.length} из ${MAX_PER})</h2><p class="hint">«Нарастающим итогом» — укажите число месяцев с начала года (3, 6, 9). Обороты пересчитываются в годовые как ×12/месяцев.</p>
-    <div class="tablewrap" style="max-height:none"><table class="data form"><thead><tr><th class="lab">№</th><th style="text-align:left">Название</th><th style="text-align:left">Дата отчёта</th><th style="text-align:left">Основа</th><th style="text-align:left">Месяцев</th><th></th></tr></thead><tbody>${pers}</tbody></table></div>
-    ${C.periods.length < MAX_PER ? `<p style="margin-top:10px"><button class="btn" data-act="addper">Добавить следующий период</button> <button class="btn ghost" data-act="addperfirst">Добавить более ранний</button></p>` : ""}</section>`;
+  <section class="panel"><h2>Отчётные периоды (${C.periods.length} из ${MAX_PER})</h2><p class="hint">Выберите год и квартал — дата, число месяцев и название подставятся сами. Для квартала основа «Нарастающим итогом» означает отчётность с начала года (3, 6, 9 мес.), «Отдельный период» — только за этот квартал. Обороты пересчитываются в годовые как ×12/месяцев.</p>
+    <div class="tablewrap" style="max-height:none"><table class="data form"><thead><tr><th class="lab">№</th><th style="text-align:left">Название</th><th style="text-align:left">Год</th><th style="text-align:left">Период</th><th style="text-align:left">Дата отчёта</th><th style="text-align:left">Основа</th><th style="text-align:left">Месяцев</th><th></th></tr></thead><tbody>${pers}</tbody></table></div>
+    ${C.periods.length < MAX_PER ? `<p style="margin-top:10px"><button class="btn" data-act="addper">Добавить следующий год</button> <button class="btn" data-act="addq">Добавить квартал</button> <button class="btn ghost" data-act="addperfirst">Добавить более ранний</button></p>` : ""}</section>`;
 }
 
 /* ---------- ОКЭД на карточке */
@@ -507,6 +509,13 @@ document.addEventListener("click", async e => {
     case "pinoff": { if (await dialog("Снять ПИН-код?", "<p>Данные в браузере будут храниться без шифрования.</p>", [{ t: "Отменить", v: false }, { t: "Снять", primary: true, v: true }])) { removePin(); render(); toast("ПИН-код снят"); } break; }
     case "addcomp": C.companies.push({ name: "", bin: "", role: S.lists.role[0], form: S.lists.form[0], vat: "Да", regime: S.lists.regime[0] }); touch(); render(); break;
     case "addper": { const l = C.periods[C.periods.length - 1], y = parseInt(l?.date?.slice(0, 4) || new Date().getFullYear(), 10) + 1; C.periods.push({ id: uid(), label: String(y), date: `${y}-12-31`, basis: "Годовой", months: 12 }); touch(); render(); break; }
+    case "addq": {
+      const l = C.periods[C.periods.length - 1], lq = l ? perQ(l) : "";
+      let y = +(l?.date || "").slice(0, 4) || new Date().getFullYear(), q = 1;
+      if (lq) { q = +lq[1] + 1; if (q > 4) { q = 1; y++; } } else y++;
+      const p = { id: uid(), label: "", date: "", basis: l && lq ? l.basis : "Нарастающим итогом", months: 3 };
+      setPeriod(p, y, "Q" + q); C.periods.push(p); touch(); render(); break;
+    }
     case "addperfirst": { const f = C.periods[0], y = parseInt(f?.date?.slice(0, 4) || new Date().getFullYear(), 10) - 1; C.periods.unshift({ id: uid(), label: String(y), date: `${y}-12-31`, basis: "Годовой", months: 12 }); touch(); render(); break; }
     case "importdlg": importDialog(); break;
     case "addoked": if (C.card.oked.length < MAX_OKED) C.card.oked.push({ code: "", name: "" }); touch(); render(); break;
@@ -552,7 +561,18 @@ document.addEventListener("change", e => {
   }
   if (d.card) { C.card[d.card] = d.num !== undefined ? parseNum(t.value) : t.value; touch(); if (d.card === "name") render(); return; }
   if (d.comp !== undefined) { C.companies[+d.comp][d.f] = t.value; touch(); return; }
-  if (d.per !== undefined) { const p = C.periods[+d.per]; p[d.f] = d.f === "months" ? Math.max(1, Math.min(12, parseInt(t.value, 10) || 12)) : t.value; touch(); return; }
+  if (d.per !== undefined) {
+    const p = C.periods[+d.per];
+    if (d.f === "q" || d.f === "year") {
+      const y = d.f === "year" ? parseInt(t.value, 10) : +(p.date || "").slice(0, 4) || new Date().getFullYear();
+      if (!(y > 1990 && y < 2100)) { toast("Укажите год, например 2025"); t.value = (p.date || "").slice(0, 4); return; }
+      setPeriod(p, y, d.f === "q" ? t.value : perQ(p) || "");
+      touch(); render(); return;
+    }
+    p[d.f] = d.f === "months" ? Math.max(1, Math.min(12, parseInt(t.value, 10) || 12)) : t.value;
+    if (d.f === "basis" && perQ(p)) setPeriod(p, +p.date.slice(0, 4), perQ(p));
+    touch(); if (d.f === "basis") render(); return;
+  }
   if (d.act === "obj") { C.obj = +t.value; touch(); render(); return; }
   if (d.concl) { C.concl[d.concl] = t.value; touch(); const doc = $("#conclDoc"); if (doc) doc.innerHTML = conclusionHTML(false); return; }
   if (d.set) { C.settings[d.set] = d.set === "units" ? t.value : +t.value; touch(); return; }
@@ -616,3 +636,21 @@ document.addEventListener("click", async e => {
   if (ok) { localStorage.removeItem(STORE_ENC); localStorage.removeItem(STORE); LOCK.on = false; LOCK.key = null; CLIENTS = []; C = null; render(); toast("Данные удалены"); }
 });
 render();
+
+/* ---------- периоды: год и квартал */
+function perQ(p) {   // квартал, если дата — конец квартала и период не годовой
+  const m = /^\d{4}-(\d{2})-(\d{2})$/.exec(p.date || ""); if (!m) return "";
+  const ends = { "03-31": 1, "06-30": 2, "09-30": 3, "12-31": 4 }, q = ends[m[1] + "-" + m[2]];
+  if (!q) return "";
+  if (p.basis === "Годовой" || p.basis === "LTM") return "";
+  return "Q" + q;
+}
+function setPeriod(p, y, q) {
+  if (!q) { p.date = `${y}-12-31`; if (p.basis !== "LTM") p.basis = "Годовой"; p.months = 12; p.label = String(y); return; }
+  const n = +q[1], end = ["03-31", "06-30", "09-30", "12-31"][n - 1];
+  p.date = `${y}-${end}`;
+  if (p.basis === "Годовой" || p.basis === "LTM" || !p.basis) p.basis = "Нарастающим итогом";
+  const sep = p.basis === "Отдельный период";
+  p.months = sep ? 3 : 3 * n;
+  p.label = sep ? `${n} кв. ${y}` : n === 4 ? `12 мес. ${y}` : `${3 * n} мес. ${y}`;
+}

@@ -386,3 +386,4 @@ table.data.top th.lab, table.data.top td.lab { min-width: 180px; }
 .conchart svg { width: 100%; height: auto; }
 .chart .br { fill: var(--blue); } .chart .bg { fill: var(--lime); } .chart .lg { font-size: 11px; fill: #272727; }
 table.data.norms td.cell input { min-width: 90px; }
+table.data.form select[data-f="basis"] { min-width: 190px; }
