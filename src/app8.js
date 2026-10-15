@@ -44,17 +44,19 @@ function fxSet(cur, key, v) {
   saveFx();
 }
 // курс на дату поступления; если на дату нет — ближайший предыдущий (до 10 дней, выходные), иначе курс за месяц
-function fxRate(cur, iso) {
-  if (!cur || cur === "KZT") return 1;
+function fxRateInfo(cur, iso) {
+  if (!cur || cur === "KZT") return { r: 1, d: iso };
   const src = [C?.fx?.[cur], FX[cur]].filter(Boolean);
-  for (const t of src) if (isNum(t[iso])) return t[iso];
+  for (const t of src) if (isNum(t[iso])) return { r: t[iso], d: iso };
   if (iso.length === 10) {
     const d = new Date(iso + "T00:00:00Z");
-    for (let i = 1; i <= 10; i++) { const k = new Date(d - i * 86400000).toISOString().slice(0, 10); for (const t of src) if (isNum(t[k])) return t[k]; }
-    for (const t of src) if (isNum(t[iso.slice(0, 7)])) return t[iso.slice(0, 7)];
+    for (let i = 1; i <= 10; i++) { const k = new Date(d - i * 86400000).toISOString().slice(0, 10); for (const t of src) if (isNum(t[k])) return { r: t[k], d: k }; }
+    for (const t of src) if (isNum(t[iso.slice(0, 7)])) return { r: t[iso.slice(0, 7)], d: iso.slice(0, 7) };
   }
   return null;
 }
+const fxRate = (cur, iso) => fxRateInfo(cur, iso)?.r ?? null;
+const dmy = iso => (iso.length === 7 ? ymLabel(iso) : iso.split("-").reverse().join("."));
 async function loadFxFile(file) {
   let sheets;
   if (/\.csv$/i.test(file.name)) sheets = csvSheets(await file.arrayBuffer());
@@ -292,11 +294,12 @@ function pageBank() {
   const own = ownOf(k);
   h += `<section class="panel"><h2>Документы (${bank.length})</h2><p class="hint">Тыс. тг (по валютным счетам — тыс. единиц валюты счёта).</p><div class="tablewrap" style="max-height:none"><table class="data"><thead><tr><th class="lab">Банк, счёт</th><th>Вид</th><th>Период</th><th>Кредит</th><th>Исключено</th><th>Чистые</th><th></th></tr></thead><tbody>
     ${bank.map(b => {
-      let cr = 0, ex = 0, per;
-      if (b.kind === "stmt") { (b.txs || []).forEach((t, i) => { if (!t.cr) return; cr += t.cr; if (txCat(b, i, t, own)[0]) ex += t.cr; }); per = `${b.from || b.txs?.[0]?.d || "?"} – ${b.to || b.txs?.[b.txs.length - 1]?.d || "?"}`; }
+      let cr = 0, ex = 0, per, crT = 0, exT = 0;
+      if (b.kind === "stmt") { (b.txs || []).forEach((t, i) => { if (!t.cr) return; const c = txCat(b, i, t, own)[0], v = txKzt(b, t, t.cr); cr += t.cr; crT += N(v); if (c) { ex += t.cr; exT += N(v); } }); per = `${b.from || b.txs?.[0]?.d || "?"} – ${b.to || b.txs?.[b.txs.length - 1]?.d || "?"}`; }
       else { const v = Object.values(b.months || {}); cr = b.rangeOnly ? N(b.total?.cr) : v.reduce((a, o) => a + N(o.cr), 0); per = b.rangeOnly ? `${b.from} – ${b.to}` : `${Object.keys(b.months || {}).length} мес.`; }
       return `<tr><td class="lab">${esc(b.bank || "банк не указан")}<span class="formula">${esc(b.acc || "счёт не указан")} · ${esc(b.cur)}${b.cur !== "KZT" && b.kind !== "stmt" && isNum(b.rate) ? " по " + fmt(b.rate, "m1") : ""} · ${esc(b.file || "введено вручную")}</span></td><td>${b.kind === "stmt" ? `выписка<span class="formula">${(b.txs || []).length} оп.</span>` : "справка"}</td><td>${esc(per)}</td>
-        <td>${fmt(cr / 1000)}</td><td>${b.kind === "stmt" ? fmt(ex / 1000) : "—"}</td><td>${fmt((b.kind === "stmt" ? cr - ex : cr) / 1000)}</td>
+        ${b.kind === "stmt" && b.cur !== "KZT" ? `<td>${fmt(cr / 1000)}<span class="formula">≈ ${fmt(crT / 1000)} тыс. тг</span></td><td>${fmt(ex / 1000)}<span class="formula">≈ ${fmt(exT / 1000)} тыс. тг</span></td><td>${fmt((cr - ex) / 1000)}<span class="formula">≈ ${fmt((crT - exT) / 1000)} тыс. тг</span></td>`
+          : `<td>${fmt(cr / 1000)}</td><td>${b.kind === "stmt" ? fmt(ex / 1000) : "—"}</td><td>${fmt((b.kind === "stmt" ? cr - ex : cr) / 1000)}</td>`}
         <td style="white-space:nowrap"><button class="btn ghost" data-bankedit="${b.id}">${b.kind === "stmt" ? "Операции" : "Открыть"}</button><button class="btn ghost danger" data-bankdel="${b.id}" title="Удалить" aria-label="Удалить">×</button></td></tr>`;
     }).join("")}</tbody></table></div></section>`;
   h += fxPanel(k);
@@ -426,15 +429,39 @@ function stmtRowsHTML(doc, own, filter, q) {
     if (filter === "ex" && !c) return; if (filter === "inc" && c) return;
     if (q && !low2(`${t.cp} ${t.purp} ${t.knp} ${t.bin}`).includes(q)) return;
     rows.push(`<tr class="${c ? "ex" : ""}"><td class="lab">${esc(t.d.split("-").reverse().join("."))}</td><td style="text-align:left;white-space:normal">${esc(t.cp || "—")}${t.bin ? `<span class="formula">БИН ${esc(t.bin)}</span>` : ""}</td>
-      <td style="text-align:left;white-space:normal">${esc(t.purp || t.op || "—")}${t.knp ? `<span class="formula">КНП ${esc(t.knp)}</span>` : ""}</td><td>${(t.cur || doc.cur) !== "KZT" ? `${K1(t.cr)} тыс. ${esc(t.cur || doc.cur)}${isNum(txKzt(doc, t, t.cr)) ? `<span class="formula">≈ ${K1(txKzt(doc, t, t.cr))} тыс. тг</span>` : `<span class="formula">нет курса</span>`}` : K1(t.cr)}</td>
+      <td style="text-align:left;white-space:normal">${esc(t.purp || t.op || "—")}${t.knp ? `<span class="formula">КНП ${esc(t.knp)}</span>` : ""}</td>${stmtFx(doc) ? fxCells(doc, t) : `<td>${K1(t.cr)}</td>`}
       <td><select class="inp" data-txcat="${i}"><option value="inc"${!c ? " selected" : ""}>В расчёте</option>${Object.entries(DocParse.CATS).map(([k2, t2]) => `<option value="${k2}"${c === k2 ? " selected" : ""} title="${esc(t2)}">Исключить: ${esc(CAT_SHORT[k2])}</option>`).join("")}</select>${why ? `<span class="formula">${esc(why)}</span>` : ""}</td></tr>`);
   });
-  return rows.length ? rows.slice(0, 1500).join("") + (rows.length > 1500 ? `<tr><td colspan="5" class="muted">Показаны первые 1500 операций — уточните поиск.</td></tr>` : "") : `<tr><td colspan="5" class="muted">Нет операций</td></tr>`;
+  const cs = stmtFx(doc) ? 7 : 5;
+  return rows.length ? rows.slice(0, 1500).join("") + (rows.length > 1500 ? `<tr><td colspan="${cs}" class="muted">Показаны первые 1500 операций — уточните поиск.</td></tr>` : "") : `<tr><td colspan="${cs}" class="muted">Нет операций</td></tr>`;
+}
+// валютная выписка: сумма в валюте, курс НБ РК на дату поступления и сумма в тенге
+const stmtFx = doc => (doc.txs || []).some(t => t.cr && (t.cur || doc.cur || "KZT") !== "KZT");
+function fxCells(doc, t) {
+  const cur = t.cur || doc.cur || "KZT";
+  if (cur === "KZT") return `<td>${K1(t.cr)}</td><td class="muted">—</td><td>${K1(t.cr)}</td>`;
+  if (isNum(t.eq) && t.eq > 0) return `<td>${K1(t.cr)}<span class="formula">${esc(cur)}</span></td><td>${nf2.format(t.eq / t.cr)}<span class="formula">эквивалент из выписки</span></td><td>${K1(t.eq)}</td>`;
+  const fi = fxRateInfo(cur, t.d);
+  return `<td>${K1(t.cr)}<span class="formula">${esc(cur)}</span></td>
+    <td class="cell"><input class="inp num fxin" data-txfx="${esc(cur)}" data-txd="${esc(t.d)}" value="${fi ? esc(nf2.format(fi.r)) : ""}" placeholder="курс"><span class="formula">${fi ? (fi.d === t.d ? "НБ РК на " + dmy(t.d) : "НБ РК на " + dmy(fi.d) + " (ближайший)") : "введите курс на " + dmy(t.d)}</span></td>
+    <td class="${fi ? "" : "muted"}">${fi ? K1(t.cr * fi.r) : "нет курса"}</td>`;
+}
+function stmtHead(doc) {
+  const cur = doc.cur && doc.cur !== "KZT" ? doc.cur : "валюта";
+  return `<tr><th class="lab">Дата</th><th style="text-align:left">Отправитель</th><th style="text-align:left">Назначение платежа</th>${stmtFx(doc) ? `<th>Сумма, тыс. ${esc(cur)}</th><th>Курс НБ РК, тг</th><th>Сумма, тыс. тг</th>` : "<th>Сумма, тыс. тг</th>"}<th style="text-align:left">Вид для расчёта</th></tr>`;
 }
 const low2 = s => String(s || "").toLowerCase().replace(/ё/g, "е");
 function stmtSummary(doc, own) {
   let cr = 0, db = 0, ex = 0, n = 0; const by = {};
   (doc.txs || []).forEach((t, i) => { db += t.db; if (!t.cr) return; n++; cr += t.cr; const [c] = txCat(doc, i, t, own); if (c) { ex += t.cr; by[c] = (by[c] || 0) + t.cr; } });
+  if (stmtFx(doc)) {
+    let crT = 0, exT = 0, dbT = 0, miss = 0;
+    (doc.txs || []).forEach((t, i) => { if (t.db) { const v = txKzt(doc, t, t.db); if (v !== null) dbT += v; } if (!t.cr) return; const v = txKzt(doc, t, t.cr); if (v === null) { miss++; return; } crT += v; if (txCat(doc, i, t, own)[0]) exT += v; });
+    return `<table class="data sumt"><thead><tr><th class="lab">Поступлений: ${n}</th><th>Кредит всего</th><th>Исключено</th><th>Чистые кредитовые обороты</th><th>Дебет всего</th></tr></thead><tbody>
+      <tr><td class="lab">в валюте, тыс. ${esc(doc.cur)}</td><td>${K1(cr)}</td><td>${K1(ex)}</td><td>${K1(cr - ex)}</td><td>${K1(db)}</td></tr>
+      <tr><td class="lab">по курсу НБ РК, тыс. тг</td><td>${K1(crT)}</td><td>${K1(exT)}</td><td class="strong">${K1(crT - exT)}</td><td>${K1(dbT)}</td></tr></tbody></table>
+      <p class="small muted" style="margin:4px 0 0">${miss ? `<b>Нет курса для ${miss} поступлений</b> — введите курс в колонке «Курс НБ РК»; без него они не входят в обороты. ` : ""}${Object.entries(by).map(([c, v]) => `${CAT_SHORT[c]}: ${K1(v)} тыс. ${esc(doc.cur)}`).join(" · ") || "Исключений нет"}</p>`;
+  }
   return `<table class="data sumt"><thead><tr><th class="lab">Поступлений</th><th>Кредит всего, тыс. ${esc(doc.cur === "KZT" ? "тг" : doc.cur)}</th><th>Исключено</th><th>Чистые кредитовые обороты</th><th>Дебет всего</th></tr></thead><tbody><tr><td class="lab">${n}</td><td>${K1(cr)}</td><td>${K1(ex)}</td><td class="strong">${K1(cr - ex)}</td><td>${K1(db)}</td></tr></tbody></table>
     <p class="small muted" style="margin:4px 0 0">${Object.entries(by).map(([c, v]) => `${CAT_SHORT[c]}: ${K1(v)}`).join(" · ") || "Исключений нет"}</p>`;
 }
@@ -452,7 +479,7 @@ async function stmtEditor(doc, isNew, note) {
     <div id="sSum">${stmtSummary(work, ownOf(work.k))}</div>
     <p class="hint">Поступления, которые не принимаются в расчёт чистых кредитовых оборотов, определены по назначению платежа, коду КНП и отправителю (сама компания — по БИН). Проверьте и при необходимости измените вид операции.</p>
     <div class="grid2 tight" style="margin:6px 0 8px"><label class="f"><span>Показать</span><select class="inp" id="sFilter"><option value="all">все поступления</option><option value="ex">только исключённые</option><option value="inc">только в расчёте</option></select></label><label class="f"><span>Поиск</span><input class="inp" id="sQ" placeholder="контрагент, назначение, КНП"></label></div>
-    <div class="tablewrap" style="max-height:46vh"><table class="data tx"><thead><tr><th class="lab">Дата</th><th style="text-align:left">Отправитель</th><th style="text-align:left">Назначение платежа</th><th>Сумма, тыс. тг</th><th style="text-align:left">Вид для расчёта</th></tr></thead><tbody id="sRows">${stmtRowsHTML(work, ownOf(work.k), "all", "")}</tbody></table></div>`;
+    <div class="tablewrap" style="max-height:46vh"><table class="data tx"><thead>${stmtHead(work)}</thead><tbody id="sRows">${stmtRowsHTML(work, ownOf(work.k), "all", "")}</tbody></table></div>`;
   const redraw = () => { $("#sRows").innerHTML = stmtRowsHTML(work, ownFor(), $("#sFilter").value, low2($("#sQ").value.trim())); $("#sSum").innerHTML = stmtSummary(work, ownFor()); };
   setTimeout(() => {
     const B = $("#dlgB"); $("#dlg").classList.add("wide");
@@ -463,6 +490,10 @@ async function stmtEditor(doc, isNew, note) {
         const autoCat = auto ? auto[0] : "inc";
         if (t.value === autoCat) delete work.ov[i]; else work.ov[i] = t.value;
         $("#sSum").innerHTML = stmtSummary(work, ownFor()); t.closest("tr").classList.toggle("ex", t.value !== "inc");
+      } else if (t.dataset.txfx !== undefined) {
+        const v = t.value.trim() === "" ? null : parseNum(t.value);
+        if (t.value.trim() !== "" && (v === null || v <= 0)) { toast("Курс — положительное число"); return; }
+        fxSet(t.dataset.txfx, t.dataset.txd, v); touch(); redraw();
       } else if (t.id === "sFilter" || t.id === "sComp") redraw();
     };
     let h; B.oninput = e => { if (e.target.id === "sQ") { clearTimeout(h); h = setTimeout(redraw, 200); } };
