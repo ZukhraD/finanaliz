@@ -38,7 +38,7 @@ function creditProblems(add) {
   if (!C) return; ensureCredit();
   for (let k = 1; k <= nComp(); k++) for (const c of creditChecks(k)) if (c.st !== "ok") add(c.st, "credit", `${compName(k)}: ${c.title.toLowerCase()}`, c.det, c.fix, c.cells || []);
   const cv = collCover();
-  if (cv && isNum(cv.cover) && cv.cover < 1.2) add(cv.cover < 1 ? "risk" : "chk", "credit", `Обеспечение покрывает запрашиваемую сумму на ${pctFmt(cv.cover)}`, `залоговая стоимость ${fmt(cv.coll)}, запрос ${fmt(cv.amt)} тыс. тг`, "Добавьте обеспечение, уменьшите сумму или учтите гарантию фонда (например, «Даму»).");
+  if (cv && isNum(cv.cover) && cv.cover < 1.2) add(cv.cover < 1 ? "risk" : "chk", "coll", `Обеспечение покрывает запрашиваемую сумму на ${pctFmt(cv.cover)}`, `залоговая стоимость ${fmt(cv.coll)}, запрос ${fmt(cv.amt)} тыс. тг`, "Добавьте обеспечение, уменьшите сумму или учтите гарантию фонда (например, «Даму»).");
   // концентрация покупателей
   for (let k = 1; k <= nComp(); k++) { const t = topBuyers(k); if (t && t.top1 > 0.3) add(t.top1 > 0.5 ? "risk" : "chk", "bank", `${compName(k)}: высокая зависимость от покупателя`, `${t.rows[0].name} — ${pctFmt(t.top1)} чистых поступлений (${t.label})`, "Оцените устойчивость отношений с покупателем (договор, срок, история), диверсификацию и влияние его ухода на денежный поток; учтите в стресс-сценарии."); }
 }
@@ -55,7 +55,7 @@ function collCover() {
 function pageCredit() {
   ensureCredit();
   const k = COMP_TAB > nComp() ? 1 : COMP_TAB, list = C.cr.filter(x => x.k === k), s = crSummary(k);
-  let h = `<div class="pagehead"><div class="lead"><h1>Кредиты и залог</h1><p>Кредитные отчёты ПКБ и ГКБ (PDF или Excel): действующие займы, просрочки и обязательства гаранта; сверка долга с балансом и перенос займов в прогноз. Ниже — обеспечение и гаранты. Суммы — в тыс. тг.</p></div>
+  let h = `<div class="pagehead"><div class="lead"><h1>Кредитная история</h1><p>Кредитные отчёты ПКБ и ГКБ (PDF или Excel): действующие займы, просрочки и обязательства гаранта; сверка долга с балансом и перенос займов в прогноз. Суммы — в тыс. тг.</p></div>
     <div class="toolbar"><button class="btn primary" data-act="docdlg" data-mode="credit">Загрузить кредитный отчёт</button><button class="btn" data-act="cradd">Добавить кредит вручную</button></div></div>
   ${compTabs()}<div id="probBanner" data-page="credit">${bannerHTML("credit")}</div>`;
   if (!list.length) h += `<div class="empty"><h2>Кредитный отчёт не загружен</h2><p class="muted">Загрузите отчёт ПКБ или ГКБ по компании — или добавьте кредиты вручную по справкам банков.</p><button class="btn primary" data-act="docdlg" data-mode="credit">Загрузить кредитный отчёт</button></div>`;
@@ -81,6 +81,16 @@ function pageCredit() {
       <div class="tablewrap" style="max-height:none"><table class="data crt"><thead><tr><th class="lab">Кредитор</th><th>Сумма</th><th>Остаток</th><th>Ставка, %</th><th>Погашение</th><th>Платёж в мес.</th><th>Просрочка</th><th>Схема</th><th>В прогноз</th><th></th></tr></thead><tbody>${act.map(row).join("") || `<tr><td colspan="10" class="muted">нет</td></tr>`}</tbody></table></div>
       ${cl.length ? `<details style="margin-top:10px"><summary>Завершённые договоры (${cl.length})</summary><div class="tablewrap" style="max-height:none"><table class="data crt"><tbody>${cl.map(row).join("")}</tbody></table></div></details>` : ""}</section>`;
   }
+  return h;
+}
+
+
+/* ---------- страница «Залог и гаранты» */
+function pageColl() {
+  ensureCredit();
+  let h = `<div class="pagehead"><div class="lead"><h1>Залог и гаранты</h1><p>Обеспечение по запросу: залоги с дисконтами, покрытие и LTV; гаранты, созаёмщики и залогодатели. Суммы — в тыс. тг.</p></div>
+    <div class="toolbar"><button class="btn primary" data-act="colladd">Добавить залог</button><button class="btn" data-act="guaradd">Добавить гаранта</button></div></div>
+  <div id="probBanner" data-page="coll">${bannerHTML("coll")}</div>`;
   // залог
   const cv = collCover();
   h += `<section class="panel"><h2>Обеспечение (залог)</h2><p class="hint">Рыночная стоимость — по отчёту об оценке, тыс. тг. Дисконт подставляется по виду залога, его можно изменить. Покрытие сравнивается с запрашиваемой суммой на «Карточке» (${isNum(C.card.amount) ? fmt(C.card.amount) + " тыс. тг" : "не указана"}).</p>
@@ -95,7 +105,7 @@ function pageCredit() {
   const L = lastPid();
   h += `<section class="panel"><h2>Гаранты и созаёмщики</h2>
     ${gcomp.length ? `<div class="tablewrap" style="max-height:none"><table class="data"><thead><tr><th class="lab">Компания группы</th><th>Роль</th><th>Выручка</th><th>Чистая прибыль</th><th>Капитал</th><th>Долг / EBITDA</th></tr></thead><tbody>
-      ${gcomp.map(o => `<tr><td class="lab">${esc(compName(o.k))}</td><td>${esc(o.x.role)}</td><td>${fmt(val(o.k, "rev", L))}</td><td class="${N(val(o.k, "ni", L)) < 0 ? "neg" : ""}">${fmt(val(o.k, "ni", L))}</td><td class="${N(val(o.k, "eq", L)) < 0 ? "neg" : ""}">${fmt(val(o.k, "eq", L))}</td><td>${fmt(ratio(o.k, "debt_ebitda", L), "x")}</td></tr>`).join("")}</tbody></table></div>` : `<p class="hint">В группе нет компаний с ролью «Гарант», «Залогодатель» или «Созаёмщик» (роль задаётся на «Карточке»).</p>`}
+      ${gcomp.map(o => `<tr><td class="lab">${esc(compName(o.k))}</td><td>${esc(o.x.role)}</td><td>${fmt(val(o.k, "rev", L))}</td><td class="${N(val(o.k, "ni", L)) < 0 ? "neg" : ""}">${fmt(val(o.k, "ni", L))}</td><td class="${N(val(o.k, "eq", L)) < 0 ? "neg" : ""}">${fmt(val(o.k, "eq", L))}</td><td>${fmt(ratio(o.k, "debt_ebitda", L), "x")}</td></tr>`).join("")}</tbody></table></div>` : `<p class="hint">В группе нет компаний с ролью «Гарант», «Залогодатель» или «Созаёмщик» (роли задаются на «Карточке», можно несколько).</p>`}
     <h3 style="margin-top:14px">Другие гаранты (физические лица, сторонние компании)</h3>
     <div class="tablewrap" style="max-height:none"><table class="data form"><thead><tr><th class="lab">№</th><th style="text-align:left">Гарант</th><th style="text-align:left">Кто это</th><th>Сумма гарантии, тыс. тг</th><th style="text-align:left">Примечание</th><th></th></tr></thead><tbody>
     ${C.guar.map((x, i) => `<tr><td class="lab">${i + 1}</td><td class="cell"><input class="inp" data-guar="${i}" data-f="name" value="${esc(x.name || "")}" style="text-align:left"></td><td class="cell"><select class="inp" data-guar="${i}" data-f="kind">${opts(["Учредитель (физ. лицо)", "Физическое лицо", "Юридическое лицо", "Фонд (Даму и др.)"], x.kind)}</select></td><td class="cell"><input class="inp num" data-guar="${i}" data-f="amt" value="${esc(fmt(x.amt))}"></td><td class="cell"><input class="inp" data-guar="${i}" data-f="note" value="${esc(x.note || "")}" style="text-align:left"></td><td><button class="btn ghost danger" data-guardel="${i}" aria-label="Удалить">×</button></td></tr>`).join("") || `<tr><td colspan="6" class="muted">нет</td></tr>`}</tbody></table></div>

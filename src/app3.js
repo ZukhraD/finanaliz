@@ -13,7 +13,7 @@ function render() {
   if (LOCK.on && !LOCK.key) return renderLock();
   if (!C) return renderClients();
   PROB = problems();
-  const steps = [["card", "Карточка"], ["bal", "Баланс"], ["odr", "ОПиУ"], ["cf", "ДДС"], ["tax", "Налоги"], ["bank", "Банк"], ["credit", "Кредиты и залог"], ["cons", "Свод и прогноз"], ["an", "Анализ"], ["prob", "Проблемы"], ["concl", "Заключение"]];
+  const steps = [["card", "Карточка"], ["bal", "Баланс"], ["odr", "ОПиУ"], ["cf", "ДДС"], ["tax", "Налоги"], ["bank", "Банк"], ["credit", "Кредитная история"], ["coll", "Залог и гаранты"], ["cons", "Свод и прогноз"], ["an", "Анализ"], ["prob", "Проблемы"], ["concl", "Заключение"]];
   if (!steps.some(st => st[0] === PAGE) && PAGE !== "map" && PAGE !== "log" && PAGE !== "norms") PAGE = "card";
   document.body.innerHTML = `
   <div class="app">
@@ -111,7 +111,7 @@ function pageCard() {
   const comps = C.companies.map((x, i) => `<tr><td class="lab">К${i + 1}</td>
       <td><input class="inp" data-comp="${i}" data-f="name" value="${esc(x.name)}" placeholder="Название"></td>
       <td><input class="inp" data-comp="${i}" data-f="bin" value="${esc(x.bin)}" placeholder="12 цифр" inputmode="numeric"></td>
-      <td><select class="inp" data-comp="${i}" data-f="role">${opts(S.lists.role, x.role)}</select></td>
+      <td><div class="roles">${S.lists.role.map(r => `<label><input type="checkbox" data-role="${i}" value="${esc(r)}" ${compRoles(x).includes(r) ? "checked" : ""}>${esc(r)}</label>`).join("")}</div></td>
       <td><select class="inp" data-comp="${i}" data-f="form">${opts(S.lists.form, x.form)}</select></td>
       <td><select class="inp" data-comp="${i}" data-f="vat">${opts(["Да", "Нет"], x.vat)}</select></td>
       <td><select class="inp" data-comp="${i}" data-f="regime">${opts(S.lists.regime, x.regime)}</select></td>
@@ -198,7 +198,7 @@ function pageForm(block) {
   const k = COMP_TAB > nComp() ? 1 : COMP_TAB;
   const [ttl, intro] = FORM_INTRO[block];
   return `<div class="pagehead"><div class="lead"><h1>${ttl}</h1><p>${intro}</p></div>
-    <div class="toolbar"><button class="btn primary" data-act="importdlg">Загрузить формы из Excel</button></div></div>
+    <div class="toolbar"><button class="btn primary" data-act="importdlg">Загрузить формы из Excel</button><button class="btn ghost danger" data-act="clearform" data-block="${block}">Очистить данные</button></div></div>
   ${compTabs()}<div id="probBanner" data-page="${block}">${bannerHTML(block)}</div>
   ${linesTable(k, [block], true)}`;
 }
@@ -353,7 +353,7 @@ function discrepancies() {
 }
 function pageProb() {
   const pers = C.periods;
-  const groups = [["card", "Карточка"], ["bal", "Баланс"], ["odr", "ОПиУ"], ["cf", "ДДС"], ["tax", "Налоги"], ["bank", "Банк"], ["credit", "Кредиты и залог"], ["cons", "Свод группы и прогноз"], ["an", "Анализ"]];
+  const groups = [["card", "Карточка"], ["bal", "Баланс"], ["odr", "ОПиУ"], ["cf", "ДДС"], ["tax", "Налоги"], ["bank", "Банк"], ["credit", "Кредитная история"], ["coll", "Залог и гаранты"], ["cons", "Свод группы и прогноз"], ["an", "Анализ"]];
   const cnt = s => PROB.filter(p => p.sev === s).length;
   let h = `<div class="pagehead"><div class="lead"><h1>Проблемы и решения</h1><p>Всё, что мешает выводу: ошибки и пропуски в данных, расхождения, зоны риска и дефициты в прогнозе — с подсказкой, что делать. Ячейки с проблемами подсвечены на страницах форм.</p></div></div>
     <div class="chips" style="margin-bottom:14px">${["crit", "risk", "chk", "nd"].map(s => `<span class="st ${s}">${SEV[s]}: ${cnt(s)}</span>`).join("")}</div>`;
@@ -429,7 +429,7 @@ function pageNorms() {
   ${keys.map(k => { const o = RATN[k] || {}, d = RAT_DEF[k]; const cell = f => `<td class="cell"><input class="inp num" data-norm="${k}" data-f="${f}" value="${esc(o[f] !== undefined ? show(k, o[f]) : "")}" placeholder="${esc(show(k, d[f]))}"></td>`;
     return `<tr><td class="lab">${esc(RAT[k].label)}<span class="formula">${esc(RAT[k].formula || "")}</span></td><td>${esc(RAT[k].dir)}</td>${cell("green")}${cell("red")}${d.crit === null || d.crit === undefined ? "<td></td>" : cell("crit")}<td>${unit(k)}</td></tr>`; }).join("")}</tbody></table></div>`;
 }
-const PAGES = { card: pageCard, bal: () => pageForm("bal"), odr: () => pageForm("odr"), cf: () => pageForm("cf"), tax: pageTax, bank: pageBank, credit: pageCredit, cons: pageCons, an: pageAn, prob: pageProb, concl: pageConcl, map: pageMap, log: pageLog, norms: pageNorms };
+const PAGES = { card: pageCard, bal: () => pageForm("bal"), odr: () => pageForm("odr"), cf: () => pageForm("cf"), tax: pageTax, bank: pageBank, credit: pageCredit, coll: pageColl, cons: pageCons, an: pageAn, prob: pageProb, concl: pageConcl, map: pageMap, log: pageLog, norms: pageNorms };
 
 /* ---------- диалоги */
 function dialog(title, body, buttons) {
@@ -504,6 +504,22 @@ document.addEventListener("click", async e => {
       const c = o; if (!c.card || !c.periods) throw new Error("это не файл клиента"); c.saved = Date.now(); const ex = CLIENTS.findIndex(x => x.id === c.id); if (ex >= 0) CLIENTS[ex] = c; else CLIENTS.push(c); saveAll(true); C = c; ensureDocs(C); ensureCredit(C); CACHE.clear(); render(); toast("Клиент открыт из файла"); } catch (err) { toast("Не удалось открыть: " + err.message); } }; inp.click(); break; }
     case "backup": { const t = Date.now(); for (const c of CLIENTS) c.saved = t; download(`Финанализ_все_клиенты_${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify({ type: "finkz-backup", created: new Date().toISOString(), clients: CLIENTS }, null, 1), "application/json"); saveAll(true); render(); toast("Все клиенты сохранены в «Загрузки». Файл не зашифрован — храните его в надёжном месте."); break; }
     case "lock": lockNow(); break;
+    case "clearform": {
+      const block = d.block, k = COMP_TAB > nComp() ? 1 : COMP_TAB, ttl = FORM_INTRO[block][0];
+      const body = `<p>Удалить введённые и загруженные значения формы «${esc(ttl)}»${nComp() > 1 ? ` компании <b>${esc(compName(k))}</b>` : ""}.</p>
+        <label class="f" style="margin-top:10px;max-width:320px"><span>Период</span><select class="inp" id="clrPer"><option value="">все периоды</option>${C.periods.map(p => `<option value="${p.id}">${esc(p.label)}</option>`).join("")}</select></label>
+        <p class="small muted" style="margin-top:10px">Нельзя отменить. Если нужна копия — сначала сохраните файл клиента.</p>`;
+      const per = await dialog("Очистить данные формы?", body, [{ t: "Отменить", v: null }, { t: "Очистить", primary: true, v: dd => ({ pid: dd.querySelector("#clrPer").value }) }]);
+      if (!per) break;
+      const keys = INPUT_KEYS.filter(key => LINE[key].block === block); let n = 0;
+      for (const key of keys) for (const p of C.periods) {
+        if (per.pid && p.id !== per.pid) continue;
+        if (C.data?.[k]?.[key] && C.data[k][key][p.id] !== undefined && C.data[k][key][p.id] !== null) { delete C.data[k][key][p.id]; n++; }
+        if (C.src?.[k]?.[key]) delete C.src[k][key][p.id];
+      }
+      C.log.unshift({ t: new Date().toISOString(), file: "—", comp: compName(k), per: per.pid ? C.periods.find(p => p.id === per.pid)?.label : "все периоды", kind: "PDF", note: `очищена форма «${ttl}»: удалено значений ${n}` });
+      touch(); render(); toast(`Удалено значений: ${n}`); break;
+    }
     case "normsreset": if (await dialog("Вернуть нормативы по умолчанию?", "<p>Все свои пороги будут удалены.</p>", [{ t: "Отменить", v: false }, { t: "Вернуть", primary: true, v: true }])) { RATN = {}; try { localStorage.removeItem(RATN_KEY); } catch (e) { /* — */ } applyRatn(); CACHE.clear(); render(); } break;
     case "pinset": pinDialog(); break;
     case "pinoff": { if (await dialog("Снять ПИН-код?", "<p>Данные в браузере будут храниться без шифрования.</p>", [{ t: "Отменить", v: false }, { t: "Снять", primary: true, v: true }])) { removePin(); render(); toast("ПИН-код снят"); } break; }
@@ -561,6 +577,12 @@ document.addEventListener("change", e => {
   }
   if (d.card) { C.card[d.card] = d.num !== undefined ? parseNum(t.value) : t.value; touch(); if (d.card === "name") render(); return; }
   if (d.comp !== undefined) { C.companies[+d.comp][d.f] = t.value; touch(); return; }
+  if (d.role !== undefined) {
+    const x = C.companies[+d.role], set = new Set(compRoles(x));
+    if (t.checked) set.add(t.value); else set.delete(t.value);
+    if (!set.size) { set.add(t.value); t.checked = true; toast("У компании должна быть хотя бы одна роль"); }
+    x.roles = S.lists.role.filter(r => set.has(r)); x.role = x.roles.join(", "); touch(); return;
+  }
   if (d.per !== undefined) {
     const p = C.periods[+d.per];
     if (d.f === "q" || d.f === "year") {
@@ -654,3 +676,6 @@ function setPeriod(p, y, q) {
   p.months = sep ? 3 : 3 * n;
   p.label = sep ? `${n} кв. ${y}` : n === 4 ? `12 мес. ${y}` : `${3 * n} мес. ${y}`;
 }
+
+// роли компании (можно несколько): заёмщик и залогодатель, гарант и залогодатель и т.д.
+function compRoles(x) { if (Array.isArray(x.roles) && x.roles.length) return x.roles; return String(x.role || "").split(/\s*,\s*/).filter(Boolean); }

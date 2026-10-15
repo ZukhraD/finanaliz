@@ -391,3 +391,9 @@ table.data.form select[data-f="basis"] { min-width: 190px; }
 .drop { display: block; margin-top: 12px; padding: 26px 18px; cursor: pointer; }
 dialog .db { max-height: 76vh; }
 dialog { width: min(720px, 94vw); }
+/* шапка таблиц непрозрачная: при прокрутке строки не просвечивают */
+table.data thead th, table.data thead th.lab { background: var(--platinum, #E5E4E2); }
+table.data thead tr th { box-shadow: 0 1px 0 #D2D1CE; }
+/* роли компании — несколько галочек */
+.roles { display: flex; flex-wrap: wrap; gap: 4px 10px; min-width: 210px; font-size: 13px; }
+.roles label { white-space: nowrap; display: inline-flex; gap: 4px; align-items: center; }
