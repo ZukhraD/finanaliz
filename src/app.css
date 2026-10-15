@@ -401,3 +401,6 @@ table.data.trust th.lab, table.data.trust td.lab { min-width: 320px; }
 table.data.trust tr.hit-crit td { background: #FFEDED; } table.data.trust tr.hit-risk td { background: #FFF1E6; } table.data.trust tr.hit-chk td { background: #FFF6E5; }
 table.data.trust select.tst.yes { color: #C4232B; font-weight: 600; } table.data.trust select.tst.no { color: var(--lime-ink, #107A10); }
 table.data.trust td.cell input { min-width: 260px; }
+.binrow{display:flex;gap:6px;align-items:center}
+.binrow .inp{min-width:130px}
+.binrow .btn{white-space:nowrap;padding:6px 10px}
