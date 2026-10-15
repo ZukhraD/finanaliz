@@ -76,29 +76,43 @@ const DocParse = (() => {
   }
   function parseDecl(pdf) {
     const L = allLines(pdf), rows = [], cnt = new Map();
+    const codes = [];   // строки с кодом: индекс, код, ячейка кода
+    for (let i = 0; i < L.length; i++) { const c = codeAt(L[i]); if (c) { codes.push({ i, c, ln: L[i], labs: c.rest ? [c.rest] : [], nums: [] }); cnt.set(c.form + "." + c.sub, (cnt.get(c.form + "." + c.sub) || 0) + 1); } }
+    const byLine = new Map(codes.map(o => [o.i, o]));
+    // каждую строку без кода относим к ближайшему коду на той же странице (сумма бывает выше или ниже строки с кодом)
     for (let i = 0; i < L.length; i++) {
-      const c = codeAt(L[i]); if (!c) continue;
-      cnt.set(c.form + "." + c.sub, (cnt.get(c.form + "." + c.sub) || 0) + 1);
-      // блок строки: эта строка и продолжения названия до следующего кода
-      const blk = [L[i]];
-      for (let j = i + 1; j < L.length && blk.length < 6; j++) {
-        if (L[j].page !== L[i].page || codeAt(L[j])) break;
-        const gap = blk[blk.length - 1].y - L[j].y;
-        if (gap > 2.6 * Math.max(L[j].fs, 6)) break;
-        blk.push(L[j]);
+      const ln = L[i], own = byLine.get(i);
+      let tgt = own;
+      if (!tgt) {
+        let best = null, d = 1e9;
+        for (const o of codes) { if (o.ln.page !== ln.page) continue; const dd = Math.abs(o.ln.y - ln.y); if (dd < d) { d = dd; best = o; } }
+        const lim = 2.8 * Math.max(ln.fs, best ? best.ln.fs : 6, 6);
+        if (!best || d > lim) continue;
+        // строка ниже кода — продолжение названия; выше — только суммы
+        tgt = best;
       }
-      const codeCell = L[i].cells[c.ci];
-      const labs = [], nums = [];
-      if (c.rest) labs.push(c.rest);
-      blk.forEach((ln, bi) => ln.cells.forEach((cell, ci) => {
-        if (bi === 0 && ci <= c.ci) return;
-        const s = norm(cell.s).trim();
-        if (isNumCell(s) && cell.x > codeCell.x2 + 2) nums.push({ x: cell.x, v: amt(s), bi });
-        else if (!/^стр\.?\s*\d+$/i.test(s)) labs.push(s);
-      }));
-      nums.sort((a, b) => a.x - b.x);
-      // одиночная цифра сразу за кодом — чаще номер графы/подстроки, а не сумма
-      rows.push({ code: c.code + (c.suf ? " " + c.suf : ""), base: c.code, suf: c.suf, form: c.form, sub: c.sub, label: labs.join(" ").replace(/\s+/g, " ").trim(), vals: nums.map(n => n.v).filter(v => v !== null) });
+      const codeCell = tgt.ln.cells[tgt.c.ci];
+      ln.cells.forEach((cell, ci) => {
+        if (own && ci <= tgt.c.ci) return;
+        const t = norm(cell.s).trim();
+        if (isNumCell(t) && cell.x > codeCell.x2 + 2) tgt.nums.push({ x: cell.x, x2: cell.x2, v: amt(t), raw: t.replace(/\s+/g, ""), fs: cell.fs, d: Math.abs(ln.y - tgt.ln.y) });
+        else if (!own && ln.y > tgt.ln.y) return;                 // текст выше строки кода — не наш
+        else if (!/^стр\.?\s*\d+$/i.test(t) && !(own === undefined && codeAt({ cells: [cell] }))) tgt.labs.push(t);
+      });
+    }
+    for (const o of codes) {
+      // одна и та же колонка — берём ближайшую по вертикали сумму
+      const cols = [];
+      for (const n of o.nums.sort((a, b) => a.x - b.x)) { const c = cols.find(k => Math.abs(k.x - n.x) < 12 || Math.abs(k.x2 - n.x2) < 12); if (!c) cols.push({ ...n }); else if (n.d < c.d) Object.assign(c, n); }
+      // цифры «по клеткам», разбитые на отдельные ячейки, — склеиваем в одно число
+      const merged = [];
+      for (const c of cols.sort((a, b) => a.x - b.x)) {
+        const pv = merged[merged.length - 1];
+        if (pv && /^\d+$/.test(pv.raw) && /^\d+$/.test(c.raw) && c.raw.length <= 3 && c.x - pv.x2 < 3 * (c.fs || 8)) { pv.raw += c.raw; pv.v = +pv.raw; pv.x2 = c.x2; }
+        else merged.push({ ...c });
+      }
+      const c = o.c;
+      rows.push({ code: c.code + (c.suf ? " " + c.suf : ""), base: c.code, suf: c.suf, form: c.form, sub: c.sub, label: o.labs.join(" ").replace(/\s+/g, " ").trim(), vals: merged.map(n => n.v).filter(v => v !== null) });
     }
     // основная форма: чаще всего встречающийся префикс вида XXX.00
     let form = null, best = 0;

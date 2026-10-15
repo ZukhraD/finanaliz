@@ -527,6 +527,47 @@ const PdfReader = (() => {
     }).filter(l => l.cells.length);
   }
 
+  /* ---------- заполняемые поля (AcroForm): значения деклараций часто лежат здесь, а не в тексте страницы */
+  function pdfText(b) {
+    if (!(b instanceof Uint8Array)) return typeof b === "string" ? b.replace(/^\//, "") : "";
+    if (b[0] === 0xFE && b[1] === 0xFF) { let s = ""; for (let i = 2; i + 1 < b.length; i += 2) s += String.fromCharCode((b[i] << 8) | b[i + 1]); return s; }
+    if (b[0] === 0xEF && b[1] === 0xBB && b[2] === 0xBF) return new TextDecoder("utf-8").decode(b.subarray(3));
+    let s = ""; for (const c of b) s += c < 128 ? String.fromCharCode(c) : CP1252[c]; return s;
+  }
+  function inherit(doc, node, key) { for (let n = doc.R(node), i = 0; n && i < 20; n = doc.R(n.Parent), i++) if (n[key] !== undefined) return doc.R(n[key]); return undefined; }
+  async function runAnnots(doc, pg, items, fonts) {
+    const R = doc.R, annots = R(pg.node.Annots); if (!Array.isArray(annots)) return;
+    for (const ref of annots) {
+      const a = R(ref); if (!a || typeof a !== "object") continue;
+      if (a.Subtype && a.Subtype !== "/Widget" && a.Subtype !== "/FreeText") continue;
+      const rect = (R(a.Rect) || []).map(x => +R(x)); if (rect.length !== 4 || rect.some(x => !isFinite(x))) continue;
+      const [x1, y1, x2, y2] = [Math.min(rect[0], rect[2]), Math.min(rect[1], rect[3]), Math.max(rect[0], rect[2]), Math.max(rect[1], rect[3])];
+      const before = items.length;
+      // 1) внешний вид поля (appearance stream)
+      let ap = R(a.AP), n = ap && R(ap.N);
+      if (n && !n.stream && typeof n === "object") { const as = R(a.AS); n = R(as && n[String(as).slice(1)]) || R(Object.values(n)[0]); }
+      if (n && n.stream) {
+        const bb = (R(n.dict.BBox) || [0, 0, x2 - x1, y2 - y1]).map(x => +R(x)), mtx = (R(n.dict.Matrix) || [1, 0, 0, 1, 0, 0]).map(x => +R(x));
+        const pts = [[bb[0], bb[1]], [bb[2], bb[1]], [bb[0], bb[3]], [bb[2], bb[3]]].map(([x, y]) => [x * mtx[0] + y * mtx[2] + mtx[4], x * mtx[1] + y * mtx[3] + mtx[5]]);
+        const tx1 = Math.min(...pts.map(p => p[0])), tx2 = Math.max(...pts.map(p => p[0])), ty1 = Math.min(...pts.map(p => p[1])), ty2 = Math.max(...pts.map(p => p[1]));
+        const sx = (x2 - x1) / ((tx2 - tx1) || 1), sy = (y2 - y1) / ((ty2 - ty1) || 1);
+        const A = mul(mtx, [sx, 0, 0, sy, x1 - tx1 * sx, y1 - ty1 * sy]);
+        try { await runContent(doc, await doc.stream(n), n.dict.Resources || pg.res, A, items, fonts, 1); } catch (e) { /* дальше — значение поля */ }
+      }
+      if (items.length > before) continue;
+      // 2) значение поля без внешнего вида
+      const v = inherit(doc, a, "V") ?? a.Contents;
+      let s = Array.isArray(v) ? v.map(pdfText).join(" ") : pdfText(v);
+      s = (s || "").replace(/\s+/g, " ").trim(); if (!s || s === "Off") continue;
+      const da = String(pdfText(inherit(doc, a, "DA") || "")), fm = /([\d.]+)\s+Tf/.exec(da);
+      const fs = fm && +fm[1] > 0 ? +fm[1] : Math.max(6, Math.min(12, (y2 - y1) * 0.7));
+      const comb = (+inherit(doc, a, "Ff") & (1 << 24)) && +inherit(doc, a, "MaxLen") > 0;     // поле «по клеткам»
+      const q = +(inherit(doc, a, "Q") || 0), w = s.length * fs * 0.5;
+      const x = comb ? x1 + (x2 - x1) * (1 - s.length / +inherit(doc, a, "MaxLen")) : q === 2 ? x2 - w - 2 : q === 1 ? (x1 + x2 - w) / 2 : x1 + 2;
+      items.push({ x, y: y1 + Math.max(1, (y2 - y1 - fs) / 2), s, w: comb ? x2 - x : w, fs, dx: 1, dy: 0 });
+    }
+  }
+
   async function read(buf, onProgress) {
     const doc = await openDoc(buf), fonts = new Map(), pages = [];
     let fallback = 0, latinHi = 0, noUni = false;
@@ -536,6 +577,7 @@ const PdfReader = (() => {
       const parts = Array.isArray(cont) ? cont.map(doc.R) : cont ? [cont] : [];
       const datas = []; for (const p of parts) if (p && p.stream) { datas.push(await doc.stream(p)); datas.push(Uint8Array.of(10)); }
       try { await runContent(doc, concat(datas), pg.res, [1, 0, 0, 1, 0, 0], items, fonts, 0); } catch (e) { /* страница с ошибкой — берём, что успели */ }
+      try { await runAnnots(doc, pg, items, fonts); } catch (e) { /* поля формы не прочитались */ }
       for (const it of items) for (const ch of it.s) { const c = ch.charCodeAt(0); if (c >= 0xF080 && c <= 0xF0FF) { fallback++; if (c >= 0xF0C0) latinHi++; } }
       pages.push(items);
       if (onProgress) onProgress(i + 1, doc.pages.length);
