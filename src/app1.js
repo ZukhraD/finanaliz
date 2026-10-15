@@ -97,6 +97,22 @@ function download(name, text, type) {
 }
 
 /* ---------------------------------------------------------------- модель клиента */
+// ОПиУ по стандартным строкам: прежние «курсовая разница» и «прочие неоперационные, нетто» → неоперационные доходы / расходы
+function migrateOdr(c) {
+  if (!c || c._odr2) return;
+  for (const k of Object.keys(c.data || {})) {
+    const d = c.data[k]; if (!d || (!d.fx && !d.onoi)) continue;
+    const pids = new Set([...Object.keys(d.fx || {}), ...Object.keys(d.onoi || {})]);
+    d.onoi_in = d.onoi_in || {}; d.onoi_out = d.onoi_out || {};
+    for (const pid of pids) {
+      const a = d.fx?.[pid], b = d.onoi?.[pid]; if (!isNum(a) && !isNum(b)) continue;
+      d.onoi_in[pid] = N(d.onoi_in[pid]) + Math.max(N(a), 0) + Math.max(N(b), 0);
+      d.onoi_out[pid] = N(d.onoi_out[pid]) + Math.max(-N(a), 0) + Math.max(-N(b), 0);
+    }
+    delete d.fx; delete d.onoi;
+  }
+  c._odr2 = true;
+}
 function newClient(name) {
   const y = new Date().getFullYear();
   return {
@@ -105,7 +121,7 @@ function newClient(name) {
       purpose: S.lists.fpurpose[0], product: S.lists.product[0], amount: null, tol: 1 },
     companies: [{ name: "", bin: "", role: S.lists.role[0], form: S.lists.form[0], vat: "Да", regime: S.lists.regime[0] }],
     periods: [y - 3, y - 2, y - 1].map(yy => ({ id: uid(), label: String(yy), date: `${yy}-12-31`, basis: "Годовой", months: 12 })),
-    obj: 0, data: {}, src: {}, elim: {}, elimOk: {}, concl: { text: "", decision: "", conditions: "", status: "Черновик" }, log: [],
+    obj: 0, _odr2: true, data: {}, src: {}, elim: {}, elimOk: {}, concl: { text: "", decision: "", conditions: "", status: "Черновик" }, log: [],
     custom: {}, settings: { units: "auto", prev: false }, decl: [], bank: [], dset: { pct: 0.02, bpct: 0.1 }, cr: [], coll: [], guar: []
   };
 }
@@ -158,7 +174,7 @@ const CALC = {
   bchk: g => allNum(g("ta"), g("tle")) ? g("ta") - g("tle") : null,
   gp: g => allNum(g("rev"), g("cogs")) ? g("rev") - g("cogs") : null,
   ebit: g => allNum(g("gp"), g("selling"), g("admin"), g("ooi"), g("ooe")) ? g("gp") - g("selling") - g("admin") + g("ooi") - g("ooe") : null,
-  ebt: g => allNum(g("ebit"), g("fin_inc"), g("int"), g("fx"), g("onoi")) ? g("ebit") + g("fin_inc") - g("int") + g("fx") + g("onoi") : null,
+  ebt: g => allNum(g("ebit"), g("fin_inc"), g("int"), g("onoi_in"), g("onoi_out")) ? g("ebit") + g("fin_inc") - g("int") + g("onoi_in") - g("onoi_out") : null,
   ni: g => allNum(g("ebt"), g("cit")) ? g("ebt") - g("cit") : g("ni_rep"),
   ebitda: g => allNum(g("ebit"), g("da")) ? g("ebit") + g("da") : null,
   adj: g => allNum(g("ebitda"), g("nonrec")) ? g("ebitda") - g("nonrec") : null,

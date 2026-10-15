@@ -15,7 +15,7 @@ const m2 = v => (isNum(v) ? nf2.format(v) : "");
 const K1 = v => (isNum(v) ? nf1.format(v / 1000) : "");          // тенге → тыс. тг для показа и правки
 const fromK = s => { const v = parseNum(s); return v === null ? null : Math.round(v * 1000 * 100) / 100; };
 const pctFmt = v => (isNum(v) ? nf1.format(v * 100) + " %" : "");
-function ensureDocs(c = C) { if (!c) return; c.decl = c.decl || []; c.bank = c.bank || []; c.dset = c.dset || { pct: 0.02, bpct: 0.1 }; c.fx = c.fx || {}; for (const b of c.bank) b.kind = b.kind || "turn"; }
+function ensureDocs(c = C) { if (!c) return; migrateOdr(c); c.decl = c.decl || []; c.bank = c.bank || []; c.dset = c.dset || { pct: 0.02, bpct: 0.1 }; c.fx = c.fx || {}; for (const b of c.bank) b.kind = b.kind || "turn"; }
 function perMonths(p) {
   const d = new Date(p.date); if (!p.date || isNaN(d)) return [];
   let y = d.getFullYear(), m = d.getMonth() + 1; const out = [];
@@ -195,7 +195,7 @@ function taxChecks(k, p) {
   const vt = declVal(k, p, "vat_turn"), vx = declVal(k, p, "vat_ex");
   if (vt) add("vat", "Выручка и оборот по НДС", "Выручка по ОПиУ", g("rev"), vx && vx.cov === vt.cov ? "Облагаемый и освобождённый оборот (ф. 300.00)" : "Облагаемый оборот (ф. 300.00)", { ...vt, v: vt.v + (vx && vx.cov === vt.cov ? vx.v : 0) }, { ok: pct * 2, risk: 0.15, cells: [cell("rev")] });
   const sg = declVal(k, p, "sgd");
-  const inc = isNum(g("rev")) ? g("rev") + N(g("ooi")) + N(g("fin_inc")) + Math.max(0, N(g("fx"))) + Math.max(0, N(g("onoi"))) : null;
+  const inc = isNum(g("rev")) ? g("rev") + N(g("ooi")) + N(g("fin_inc")) + N(g("onoi_in")) : null;
   add("sgd", "Все доходы и совокупный годовой доход", "Доходы по ОПиУ (выручка, прочие, финансовые)", inc, "СГД по ф. 100.00", sg, { ok: pct * 2, risk: 0.15, max: "chk", cells: [cell("rev"), cell("ooi"), cell("fin_inc")] });
   const ct = declVal(k, p, "cit");
   add("cit", "КПН по отчётности и по декларации", "Расход по КПН в ОПиУ", g("cit"), ct && ct.docs.some(d => d.form === "910") ? "Налог по ф. 910.00" : "КПН по декларации", ct, { ok: 0.05, risk: 0.3, max: "chk", cells: [cell("cit")] });
