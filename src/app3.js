@@ -10,10 +10,11 @@ const stChip = (s, txt) => `<span class="st ${s}">${esc(txt ?? ST[s] ?? "")}</sp
 const CHK_TXT = { ok: ["ok", "ОК"], bad: ["crit", "Расхождение"], nd: ["nd", "нет данных"], na: ["nd", "—"] };
 
 function render() {
+  if (LOCK.on && !LOCK.key) return renderLock();
   if (!C) return renderClients();
   PROB = problems();
-  const steps = [["card", "Карточка"], ["bal", "Баланс"], ["odr", "ОПиУ"], ["cf", "ДДС"], ["tax", "Налоги"], ["bank", "Банк"], ["cons", "Свод и прогноз"], ["an", "Анализ"], ["prob", "Проблемы"], ["concl", "Заключение"]];
-  if (!steps.some(st => st[0] === PAGE) && PAGE !== "map" && PAGE !== "log") PAGE = "card";
+  const steps = [["card", "Карточка"], ["bal", "Баланс"], ["odr", "ОПиУ"], ["cf", "ДДС"], ["tax", "Налоги"], ["bank", "Банк"], ["credit", "Кредиты и залог"], ["cons", "Свод и прогноз"], ["an", "Анализ"], ["prob", "Проблемы"], ["concl", "Заключение"]];
+  if (!steps.some(st => st[0] === PAGE) && PAGE !== "map" && PAGE !== "log" && PAGE !== "norms") PAGE = "card";
   document.body.innerHTML = `
   <div class="app">
     <nav class="rail" aria-label="Разделы">
@@ -21,7 +22,7 @@ function render() {
       <button class="back" data-act="clients">← К списку клиентов</button>
       <div class="client"><b>${esc(C.card.name)}</b><span class="small">${nComp()} комп. · ${C.periods.length} пер.</span></div>
       <ol class="steps">${steps.map(([id, t]) => `<li class="num"><button data-page="${id}" ${PAGE === id ? 'aria-current="page"' : ""}>${t}<span class="pdot" data-pdot="${id}"></span></button></li>`).join("")}</ol>
-      <ul class="steps"><li><button data-page="map" ${PAGE === "map" ? 'aria-current="page"' : ""}>Настройка загрузки</button></li><li><button data-page="log" ${PAGE === "log" ? 'aria-current="page"' : ""}>Журнал загрузок</button></li></ul>
+      <ul class="steps"><li><button data-page="map" ${PAGE === "map" ? 'aria-current="page"' : ""}>Настройка загрузки</button></li><li><button data-page="norms" ${PAGE === "norms" ? 'aria-current="page"' : ""}>Нормативы</button></li><li><button data-page="log" ${PAGE === "log" ? 'aria-current="page"' : ""}>Журнал</button></li></ul>
       <div class="foot"><button data-act="export">Сохранить файл клиента</button><span id="saved" class="saved"></span><p class="copy">© 2026 Создан ОФКК Костанай</p></div>
     </nav>
     <main class="main" id="main">${PAGES[PAGE]()}</main>
@@ -76,12 +77,14 @@ function renderClients() {
       <div class="cstat">${stChip(...stOf(c))}</div>
       <div class="cact"><button class="btn primary" data-open="${c.id}">Открыть</button><button class="btn ghost" data-exp="${c.id}" title="Сохранить файл клиента">Файл</button><button class="btn ghost danger" data-del="${c.id}">Удалить</button></div></li>`).join("");
   document.body.innerHTML = `<div class="home">
-    <header class="hbar"><div class="mark" aria-hidden="true"><span></span></div><b>Финансовый анализ</b><span class="hnote">работает без интернета · данные остаются на этом компьютере</span></header>
+    <header class="hbar"><div class="mark" aria-hidden="true"><span></span></div><b>Финансовый анализ</b><span class="hnote">работает без интернета · данные остаются на этом компьютере${LOCK.on ? " · защищено ПИН-кодом" : ""}</span>
+      <span class="hsec">${cryptoOk() ? (LOCK.on ? `<button class="btn ghost" data-act="lock">Заблокировать</button><button class="btn ghost" data-act="pinset">Сменить ПИН</button><button class="btn ghost" data-act="pinoff">Снять ПИН</button>` : `<button class="btn ghost" data-act="pinset">Защитить ПИН-кодом</button>`) : ""}</span></header>
+    ${(() => { const n = list.filter(c => !c.demo && (!c.saved || c.saved < c.updated)).length; return n ? `<div class="hwarn"><b>${n === 1 ? "1 клиент изменён" : n + " клиентов изменены"} после последнего сохранения в файл.</b> Данные хранятся только в этом браузере — если очистить его, они пропадут. <button class="btn primary" data-act="backup">Сохранить всех клиентов в файл</button></div>` : ""; })()}
     <section class="hero">
       <div class="hblue">
         <h1>Финансовый анализ компаний и групп Казахстана</h1>
-        <p>Баланс, ОПиУ и ДДС — из Excel или вручную, свод группы, коэффициенты, прогноз денежного потока до 84 месяцев, проблемы с подсказками и заключение в Word.</p>
-        <div class="hbtn"><button class="btn lime" data-act="new">Новый клиент</button><button class="btn wline" data-act="import">Открыть файл клиента</button></div>
+        <p>Отчётность из Excel, декларации, выписки и кредитные отчёты из PDF; чистые кредитовые обороты, сверки, коэффициенты, залог, прогноз денежного потока до 84 месяцев, проблемы с подсказками и заключение в Word. Все суммы — в тыс. тг.</p>
+        <div class="hbtn"><button class="btn lime" data-act="new">Новый клиент</button><button class="btn wline" data-act="import">Открыть файл клиента</button>${list.length ? `<button class="btn wline" data-act="backup">Сохранить всех в файл</button>` : ""}</div>
       </div>
       <div class="hside">
         <div class="hgraph"><span class="k">${list.length}</span><span class="l">${list.length === 1 ? "клиент в работе" : "клиентов в базе"}</span>
@@ -233,7 +236,7 @@ function pageCons() {
       <label class="f"><span>Ставка, %</span>${fcIn("req.rate", f.req.rate, true)}</label>
       <label class="f"><span>Схема погашения</span><select class="inp" data-fc="req.scheme">${opts(Object.keys(SCH), f.req.scheme)}</select></label>
       <label class="f"><span>Горизонт прогноза</span><select class="inp" data-fc="horizon" data-numsel>${[[0, `По сроку кредита (${fcHorizon()} мес.)`], [24, "24 мес."], [36, "36 мес."], [48, "48 мес."], [60, "60 мес."], [72, "72 мес."], [84, "84 мес."]].map(([v, t]) => `<option value="${v}"${N(f.horizon) == v ? " selected" : ""}>${t}</option>`).join("")}</select></label></div>
-      <h3 style="margin-top:16px">Сезонность выручки (1 = средний месяц)</h3><div class="seas">${["Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"].map((m, i) => `<label class="f"><span>${m}</span>${fcIn(`seas.${i}`, f.seas[i])}</label>`).join("")}</div>
+      <h3 style="margin-top:16px">Сезонность выручки (1 = средний месяц) <button class="btn ghost" data-act="seasbank" title="По чистым кредитовым оборотам из выписок за последние 12–24 месяца">Из банковских оборотов</button></h3><div class="seas">${["Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"].map((m, i) => `<label class="f"><span>${m}</span>${fcIn(`seas.${i}`, f.seas[i])}</label>`).join("")}</div>
     </div></div>
     <h3 style="margin-top:18px">Действующие кредиты</h3>
     ${loans.length ? "" : `<p class="hint" style="margin-top:4px">Реестр пуст — долг из баланса (${fmt(ratio(C.obj, "debt", lastPid()))} тыс. тг) гасится равными долями: ставка ${fcIn("aggRate", f.aggRate, true).replace('class="inp num"', 'class="inp num inl"')} %, срок ${fcIn("aggTerm", f.aggTerm).replace('class="inp num"', 'class="inp num inl"')} мес. Для точности добавьте кредиты по справкам банков.</p>`}
@@ -348,7 +351,7 @@ function discrepancies() {
 }
 function pageProb() {
   const pers = C.periods;
-  const groups = [["card", "Карточка"], ["bal", "Баланс"], ["odr", "ОПиУ"], ["cf", "ДДС"], ["tax", "Налоги"], ["bank", "Банк"], ["cons", "Свод группы и прогноз"], ["an", "Анализ"]];
+  const groups = [["card", "Карточка"], ["bal", "Баланс"], ["odr", "ОПиУ"], ["cf", "ДДС"], ["tax", "Налоги"], ["bank", "Банк"], ["credit", "Кредиты и залог"], ["cons", "Свод группы и прогноз"], ["an", "Анализ"]];
   const cnt = s => PROB.filter(p => p.sev === s).length;
   let h = `<div class="pagehead"><div class="lead"><h1>Проблемы и решения</h1><p>Всё, что мешает выводу: ошибки и пропуски в данных, расхождения, зоны риска и дефициты в прогнозе — с подсказкой, что делать. Ячейки с проблемами подсвечены на страницах форм.</p></div></div>
     <div class="chips" style="margin-bottom:14px">${["crit", "risk", "chk", "nd"].map(s => `<span class="st ${s}">${SEV[s]}: ${cnt(s)}</span>`).join("")}</div>`;
@@ -375,30 +378,6 @@ function riskSummary(obj) {
   let miss = 0; for (let k = 1; k <= nComp(); k++) miss += missingInputs(k, L);
   const ind = miss > 0 ? ["nd", "Недостаточно данных"] : cnt.crit > 0 ? ["crit", "Критический риск"] : (cnt.risk > 0 || cnt.chk >= 3 || disc > 0) ? ["chk", "Умеренный риск — требует проверки"] : ["ok", "Приемлемый риск"];
   return { cnt, disc, miss, ind };
-}
-function conclusionHTML(forWord) {
-  const obj = C.obj, L = lastPid(), P = prevPid(L), pers = C.periods, rs = riskSummary(obj);
-  const row = (lab, key, kind, isR) => { const f = p => (p ? (isR ? ratio(obj, key, p) : val(obj, key, p)) : null); const a = f(P), b = f(L);
-    return `<tr><td style="text-align:left">${lab}</td><td>${fmt(a, kind)}</td><td>${fmt(b, kind)}</td><td style="text-align:left">${isR ? (ST[rstatus(key, b)] || "") : ""}</td></tr>`; };
-  const th = forWord ? ' style="border:1px solid #E5E4E2;padding:4px 8px;background:#E5E4E2"' : "";
-  const tbl = `<table class="data" ${forWord ? 'style="border-collapse:collapse;font-size:10pt" border="1" cellpadding="4"' : ""}><thead><tr><th${th} style="text-align:left">Показатель</th><th${th}>${esc(pers[perIdx(P)]?.label || "")}</th><th${th}>${esc(pers[perIdx(L)]?.label || "")}</th><th${th}>Оценка</th></tr></thead><tbody>
-    ${row("Выручка, тыс. тг", "rev", "m")}${row("EBITDA (годовая), тыс. тг", "ebitda_ann", "m", true)}${row("Чистая прибыль, тыс. тг", "ni", "m")}
-    ${row("Итого активы, тыс. тг", "ta", "m")}${row("Капитал, тыс. тг", "eq", "m")}${row("Общий долг, тыс. тг", "debt", "m", true)}
-    ${row("Текущая ликвидность", "liq_cur", "x", true)}${row("Долг / EBITDA", "debt_ebitda", "x", true)}${row("Коэффициент автономии", "eq_ratio", "x", true)}
-    ${row("Покрытие процентов (EBIT)", "icr", "x", true)}${row("Денежный цикл, дней", "cycle", "d", true)}${row("DSCR (история)", "dscr_hist", "x", true)}</tbody></table>`;
-  const flagged = Object.keys(RAT).filter(k => ["risk", "crit"].includes(rstatus(k, ratio(obj, k, L)))).map(k => `${RAT[k].label}: ${fmt(ratio(obj, k, L), KIND[k])} — ${ST[rstatus(k, ratio(obj, k, L))].toLowerCase()}`);
-  const c = C.card;
-  return `<h1>Заключение по финансовому анализу</h1>
-  <p><b>${esc(c.name)}</b>${c.bin ? ", БИН " + esc(c.bin) : ""}. ${esc(c.activity || "")}</p>${okedListText(C) ? `<p>ОКЭД: ${esc(okedListText(C))}</p>` : ""}
-  <p>Объект анализа: ${esc(objName(obj))}. Периоды: ${esc(pers.map(p => p.label).join(", "))}. Запрос: ${esc(c.product || "")}, ${isNum(c.amount) ? fmt(c.amount) + " тыс. тг" : "сумма не указана"}; цель — ${esc((c.purpose || "").toLowerCase())}.</p>
-  <h2 style="margin-top:14px">Ключевые показатели</h2>${tbl}
-  <h2 style="margin-top:14px">Оценка риска (автоиндикатор)</h2>
-  <p><b>${esc(rs.ind[1])}</b>. Показателей в норме: ${rs.cnt.ok}, требуют проверки: ${rs.cnt.chk}, в зоне риска: ${rs.cnt.risk}, критических: ${rs.cnt.crit}. Расхождений в сверках: ${rs.disc}. Незаполненных обязательных строк в последнем периоде: ${rs.miss}.</p>
-  ${flagged.length ? `<p>Обратить внимание:</p><ul>${flagged.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
-  ${taxConclHTML()}
-  <h2 style="margin-top:14px">Выводы аналитика</h2><p class="concl-text">${esc(C.concl.text || "—")}</p>
-  <h2 style="margin-top:14px">Рекомендация</h2><p><b>${esc(C.concl.decision || "не выбрана")}</b></p>${C.concl.conditions ? `<p class="concl-text">${esc(C.concl.conditions)}</p>` : ""}
-  <p class="small muted" style="margin-top:18px">Аналитик: ${esc(c.analyst || "—")}. Дата: ${esc(c.date || "")}. Статус: ${esc(C.concl.status)}. Автоиндикатор не заменяет решение аналитика.</p>`;
 }
 function pageConcl() {
   const rs = riskSummary(C.obj);
@@ -431,10 +410,24 @@ function pageMap() {
 function pageLog() {
   const rows = C.log.map(r => `<tr><td class="lab" style="min-width:150px">${new Date(r.t).toLocaleString("ru-RU")}</td><td style="text-align:left">${esc(r.file)}${r.sheet ? " / " + esc(r.sheet) : ""}</td><td style="text-align:left">${esc([r.comp, r.per].filter(Boolean).join(", "))}</td>
     <td style="text-align:left;white-space:normal">${r.err ? stChip("crit", "ошибка") + " " + esc(r.err) : r.kind === "PDF" ? stChip("ok", "PDF") + " " + esc(r.note || "") : `${stChip("ok", SRC_TXT[r.kind])} ${r.n} строк; ${esc(r.prof)}; ${esc(r.units)}${r.over ? "; перезаписано " + r.over : ""}${r.miss?.length ? "; нет кодов: " + esc(r.miss.join(", ")) : ""}`}</td></tr>`).join("");
-  return `<div class="pagehead"><div class="lead"><h1>Журнал загрузок</h1><p>Что, когда и из какого файла загружено.</p></div></div>
-  ${rows ? `<div class="tablewrap"><table class="data"><thead><tr><th class="lab">Когда</th><th style="text-align:left">Файл</th><th style="text-align:left">Куда</th><th style="text-align:left">Результат</th></tr></thead><tbody>${rows}</tbody></table></div>` : `<div class="empty"><h2>Загрузок пока не было</h2><p class="muted">Формы загружаются на странице «Отчётность».</p></div>`}`;
+  const pl = pid => C.periods.find(p => p.id === pid)?.label || "?";
+  const ed = (C.edits || []).map(r => `<tr><td class="lab" style="min-width:150px">${new Date(r.t).toLocaleString("ru-RU")}</td><td style="text-align:left">${esc(compName(r.k))}, ${esc(pl(r.pid))}</td><td style="text-align:left;white-space:normal">${esc(LINE[r.key]?.label || r.key)}</td><td>${r.old === null ? "пусто" : fmt(r.old)}</td><td>${r.v === null ? "пусто" : fmt(r.v)}</td><td style="text-align:left">${r.src ? "загружено из " + esc(r.src) : "ввод вручную"}</td></tr>`).join("");
+  return `<div class="pagehead"><div class="lead"><h1>Журнал</h1><p>Загрузки файлов и ручные изменения цифр в формах — для проверки и отчёта.</p></div></div>
+  <section class="panel"><h2>Ручные изменения (${(C.edits || []).length})</h2>${ed ? `<div class="tablewrap"><table class="data"><thead><tr><th class="lab">Когда</th><th style="text-align:left">Компания, период</th><th style="text-align:left">Строка</th><th>Было</th><th>Стало</th><th style="text-align:left">Источник значения</th></tr></thead><tbody>${ed}</tbody></table></div>` : `<p class="muted">Изменений вручную пока не было.</p>`}</section>
+  <section class="panel"><h2>Загрузки</h2>${rows ? `<div class="tablewrap"><table class="data"><thead><tr><th class="lab">Когда</th><th style="text-align:left">Файл</th><th style="text-align:left">Куда</th><th style="text-align:left">Результат</th></tr></thead><tbody>${rows}</tbody></table></div>` : `<p class="muted">Загрузок пока не было.</p>`}</section>`;
 }
-const PAGES = { card: pageCard, bal: () => pageForm("bal"), odr: () => pageForm("odr"), cf: () => pageForm("cf"), tax: pageTax, bank: pageBank, cons: pageCons, an: pageAn, prob: pageProb, concl: pageConcl, map: pageMap, log: pageLog };
+function pageNorms() {
+  const keys = Object.keys(RAT).filter(k => RAT[k].dir && RAT_DEF[k] && RAT_DEF[k].green !== null && RAT_DEF[k].green !== undefined);
+  const kd = k => KIND[k] === "p" ? "p" : KIND[k] === "d" ? "d" : "x";
+  const show = (k, v) => (v === null || v === undefined ? "" : kd(k) === "p" ? nf1.format(v * 100) : kd(k) === "d" ? nf0.format(v) : nf2.format(v));
+  const unit = k => (kd(k) === "p" ? "%" : kd(k) === "d" ? "дней" : "×");
+  return `<div class="pagehead"><div class="lead"><h1>Нормативы коэффициентов</h1><p>Пороги, по которым коэффициенты окрашиваются: «норма» (не хуже зелёного порога), «требует проверки» (до красного), «риск» и «критический риск». Свои значения действуют для всех клиентов в этом браузере. Пустая ячейка — значение по умолчанию.</p></div>
+    <div class="toolbar"><button class="btn ghost" data-act="normsreset">Вернуть все по умолчанию</button></div></div>
+  <div class="tablewrap"><table class="data norms"><thead><tr><th class="lab">Коэффициент</th><th>Направление</th><th>Норма (зелёный)</th><th>Проверка (красный)</th><th>Критично</th><th>Ед.</th></tr></thead><tbody>
+  ${keys.map(k => { const o = RATN[k] || {}, d = RAT_DEF[k]; const cell = f => `<td class="cell"><input class="inp num" data-norm="${k}" data-f="${f}" value="${esc(o[f] !== undefined ? show(k, o[f]) : "")}" placeholder="${esc(show(k, d[f]))}"></td>`;
+    return `<tr><td class="lab">${esc(RAT[k].label)}<span class="formula">${esc(RAT[k].formula || "")}</span></td><td>${esc(RAT[k].dir)}</td>${cell("green")}${cell("red")}${d.crit === null || d.crit === undefined ? "<td></td>" : cell("crit")}<td>${unit(k)}</td></tr>`; }).join("")}</tbody></table></div>`;
+}
+const PAGES = { card: pageCard, bal: () => pageForm("bal"), odr: () => pageForm("odr"), cf: () => pageForm("cf"), tax: pageTax, bank: pageBank, credit: pageCredit, cons: pageCons, an: pageAn, prob: pageProb, concl: pageConcl, map: pageMap, log: pageLog, norms: pageNorms };
 
 /* ---------- диалоги */
 function dialog(title, body, buttons) {
@@ -490,8 +483,8 @@ document.addEventListener("click", async e => {
   if (d.delloan !== undefined) { fcParams().loans.splice(+d.delloan, 1); touch(); render(); return; }
   if (d.deloked !== undefined) { C.card.oked.splice(+d.deloked, 1); touch(); render(); return; }
   if (d.delproj !== undefined) { fcParams().projects.splice(+d.delproj, 1); touch(); render(); return; }
-  if (d.open) { C = CLIENTS.find(c => c.id === d.open); ensureDocs(C); CACHE.clear(); PAGE = "card"; render(); return; }
-  if (d.exp) { const c = CLIENTS.find(c => c.id === d.exp); download(fileName(c), JSON.stringify(c, null, 1), "application/json"); return; }
+  if (d.open) { C = CLIENTS.find(c => c.id === d.open); ensureDocs(C); ensureCredit(C); CACHE.clear(); PAGE = "card"; render(); return; }
+  if (d.exp) { const c = CLIENTS.find(c => c.id === d.exp); c.saved = Date.now(); download(fileName(c), JSON.stringify(c, null, 1), "application/json"); saveAll(true); render(); return; }
   if (d.del) { const c = CLIENTS.find(c => c.id === d.del); if (await dialog("Удалить клиента?", `<p>«${esc(c.card.name)}» будет удалён из этого браузера. Если нужна копия — сначала сохраните файл клиента.</p>`, [{ t: "Отменить", v: false }, { t: "Удалить", primary: true, v: true }])) { CLIENTS = CLIENTS.filter(x => x !== c); saveAll(true); render(); } return; }
   if (d.delcomp !== undefined) { const i = +d.delcomp; C.companies.splice(i, 1); const nd = {}; Object.keys(C.data).forEach(k => { const n = +k; if (n < i + 1) nd[n] = C.data[k]; else if (n > i + 1) nd[n - 1] = C.data[k]; }); C.data = nd; if (C.obj > nComp()) C.obj = 0; touch(); render(); return; }
   if (d.delper !== undefined) { C.periods.splice(+d.delper, 1); touch(); render(); return; }
@@ -499,8 +492,19 @@ document.addEventListener("click", async e => {
     case "clients": C = null; render(); break;
     case "new": { const c = newClient(); CLIENTS.push(c); C = c; PAGE = "card"; saveAll(true); render(); break; }
     case "demo": { const c = demoClient(); CLIENTS.push(c); C = c; PAGE = "an"; saveAll(true); render(); break; }
-    case "export": download(fileName(C), JSON.stringify(C, null, 1), "application/json"); toast("Файл клиента сохранён в «Загрузки»"); break;
-    case "import": { const inp = document.createElement("input"); inp.type = "file"; inp.accept = ".json"; inp.onchange = async () => { try { const c = JSON.parse(await inp.files[0].text()); if (!c.card || !c.periods) throw new Error("это не файл клиента"); const ex = CLIENTS.findIndex(x => x.id === c.id); if (ex >= 0) CLIENTS[ex] = c; else CLIENTS.push(c); saveAll(true); C = c; ensureDocs(C); CACHE.clear(); render(); toast("Клиент открыт из файла"); } catch (err) { toast("Не удалось открыть: " + err.message); } }; inp.click(); break; }
+    case "export": C.saved = Date.now(); download(fileName(C), JSON.stringify(C, null, 1), "application/json"); saveAll(true); toast("Файл клиента сохранён в «Загрузки»"); break;
+    case "import": { const inp = document.createElement("input"); inp.type = "file"; inp.accept = ".json"; inp.onchange = async () => { try {
+      const o = JSON.parse(await inp.files[0].text());
+      if (o && o.type === "finkz-backup" && Array.isArray(o.clients)) {   // резервная копия всех клиентов
+        let n = 0; for (const c of o.clients) { if (!c.card || !c.periods) continue; c.saved = Date.now(); const ex = CLIENTS.findIndex(x => x.id === c.id); if (ex >= 0) CLIENTS[ex] = c; else CLIENTS.push(c); n++; }
+        saveAll(true); C = null; render(); toast("Восстановлено клиентов: " + n); return;
+      }
+      const c = o; if (!c.card || !c.periods) throw new Error("это не файл клиента"); c.saved = Date.now(); const ex = CLIENTS.findIndex(x => x.id === c.id); if (ex >= 0) CLIENTS[ex] = c; else CLIENTS.push(c); saveAll(true); C = c; ensureDocs(C); ensureCredit(C); CACHE.clear(); render(); toast("Клиент открыт из файла"); } catch (err) { toast("Не удалось открыть: " + err.message); } }; inp.click(); break; }
+    case "backup": { const t = Date.now(); for (const c of CLIENTS) c.saved = t; download(`Финанализ_все_клиенты_${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify({ type: "finkz-backup", created: new Date().toISOString(), clients: CLIENTS }, null, 1), "application/json"); saveAll(true); render(); toast("Все клиенты сохранены в «Загрузки». Файл не зашифрован — храните его в надёжном месте."); break; }
+    case "lock": lockNow(); break;
+    case "normsreset": if (await dialog("Вернуть нормативы по умолчанию?", "<p>Все свои пороги будут удалены.</p>", [{ t: "Отменить", v: false }, { t: "Вернуть", primary: true, v: true }])) { RATN = {}; try { localStorage.removeItem(RATN_KEY); } catch (e) { /* — */ } applyRatn(); CACHE.clear(); render(); } break;
+    case "pinset": pinDialog(); break;
+    case "pinoff": { if (await dialog("Снять ПИН-код?", "<p>Данные в браузере будут храниться без шифрования.</p>", [{ t: "Отменить", v: false }, { t: "Снять", primary: true, v: true }])) { removePin(); render(); toast("ПИН-код снят"); } break; }
     case "addcomp": C.companies.push({ name: "", bin: "", role: S.lists.role[0], form: S.lists.form[0], vat: "Да", regime: S.lists.regime[0] }); touch(); render(); break;
     case "addper": { const l = C.periods[C.periods.length - 1], y = parseInt(l?.date?.slice(0, 4) || new Date().getFullYear(), 10) + 1; C.periods.push({ id: uid(), label: String(y), date: `${y}-12-31`, basis: "Годовой", months: 12 }); touch(); render(); break; }
     case "addperfirst": { const f = C.periods[0], y = parseInt(f?.date?.slice(0, 4) || new Date().getFullYear(), 10) - 1; C.periods.unshift({ id: uid(), label: String(y), date: `${y}-12-31`, basis: "Годовой", months: 12 }); touch(); render(); break; }
@@ -509,7 +513,7 @@ document.addEventListener("click", async e => {
     case "okedfile": { const inp = document.createElement("input"); inp.type = "file"; inp.accept = ".xlsx,.xlsm"; inp.onchange = async () => { try { const n = await loadOkedFile(inp.files[0]); toast("Справочник ОКЭД загружен: " + nf0.format(n) + " кодов"); render(); } catch (err) { toast("Не удалось загрузить справочник: " + err.message); } }; inp.click(); break; }
     case "addloan": { const f = fcParams(); f.loans = f.loans || []; if (!f.loans.length) { const d = ratio(C.obj, "debt", lastPid()); if (isNum(d) && d > 0) f.loans.push({ name: "Долг по балансу", bal: d, rate: f.aggRate, rem: f.aggTerm, scheme: "Дифференцированный", grace: 0 }); else f.loans.push({ name: "", bal: 0, rate: 0.16, rem: 36, scheme: "Дифференцированный", grace: 0 }); } else f.loans.push({ name: "", bal: 0, rate: 0.16, rem: 36, scheme: "Дифференцированный", grace: 0 }); touch(); render(); break; }
     case "addproj": { const f = fcParams(); f.projects = f.projects || []; f.projects.push({ name: "", amt: 0, start: 3, dur: 3, own: 0.3 }); touch(); render(); break; }
-    case "word": { const html = `<html><head><meta charset="utf-8"><style>body{font-family:Roboto,Calibri,Arial;font-size:11pt;color:#272727}h1,h2{font-family:'Futura PT','Century Gothic',Arial;color:#272727}h1{font-size:16pt;border-bottom:3pt solid #023DFF;padding-bottom:4pt}h2{font-size:13pt;color:#023DFF}.small,.muted{font-family:Verdana;font-size:8pt;color:#666}td,th{border:1px solid #E5E4E2;padding:3px 6px;text-align:right}</style></head><body>${conclusionHTML(true)}</body></html>`; download(`Заключение_${safeName(C.card.name)}.doc`, "﻿" + html, "application/msword"); break; }
+    case "word": exportWord(); break;
     case "print": window.print(); break;
   }
 });
@@ -519,7 +523,10 @@ document.addEventListener("change", e => {
   if (d.key) {
     const v = parseNum(t.value);
     if (t.value.trim() !== "" && v === null) { toast("Не число: «" + t.value + "» — значение не сохранено"); t.value = fmt(rawComp(+d.k, d.key, d.pid)); return; }
-    C.data[d.k] = C.data[d.k] || {}; C.data[d.k][d.key] = C.data[d.k][d.key] || {}; C.data[d.k][d.key][d.pid] = v;
+    C.data[d.k] = C.data[d.k] || {}; C.data[d.k][d.key] = C.data[d.k][d.key] || {};
+    const old = C.data[d.k][d.key][d.pid];
+    if ((old ?? null) !== (v ?? null)) { C.edits = C.edits || []; C.edits.unshift({ t: new Date().toISOString(), k: +d.k, key: d.key, pid: d.pid, old: old ?? null, v, src: C.src?.[d.k]?.[d.key]?.[d.pid]?.file || "" }); C.edits = C.edits.slice(0, 500); }
+    C.data[d.k][d.key][d.pid] = v;
     if (C.src?.[d.k]?.[d.key]?.[d.pid]) C.src[d.k][d.key][d.pid].status = "Изменено вручную";
     t.value = fmt(v); touch(); refreshCalc(); return;
   }
@@ -550,6 +557,13 @@ document.addEventListener("change", e => {
   if (d.concl) { C.concl[d.concl] = t.value; touch(); const doc = $("#conclDoc"); if (doc) doc.innerHTML = conclusionHTML(false); return; }
   if (d.set) { C.settings[d.set] = d.set === "units" ? t.value : +t.value; touch(); return; }
   if (d.custom) { C.custom[d.custom] = t.value.trim(); touch(); return; }
+  if (d.norm) {
+    const k = d.norm, kind = KIND[k], raw = t.value.trim(); RATN[k] = RATN[k] || {};
+    if (raw === "") delete RATN[k][d.f]; else { let v = parseNum(raw); if (v === null) { toast("Не число: «" + raw + "»"); return; } if (kind === "p") v = v / 100; RATN[k][d.f] = v; }
+    if (!Object.keys(RATN[k]).length) delete RATN[k];
+    try { localStorage.setItem(RATN_KEY, JSON.stringify(RATN)); } catch (e) { /* на сеанс */ }
+    applyRatn(); CACHE.clear(); PROB = problems(); paintProblemMarks(); return;
+  }
 });
 document.addEventListener("keydown", e => {
   if (e.key === "Enter" && e.target.matches("td.cell input")) { e.preventDefault(); const td = e.target.closest("td"), tr = td.parentElement, idx = Array.from(tr.children).indexOf(td); let n = tr.nextElementSibling; while (n && !n.children[idx]?.querySelector("input")) n = n.nextElementSibling; e.target.blur(); n?.children[idx].querySelector("input").focus(); }
@@ -566,4 +580,39 @@ function refreshCalc() {
 const safeName = s => String(s || "клиент").replace(/[\\/:*?"<>|«»]/g, "").trim().slice(0, 60) || "клиент";
 const fileName = c => `Клиент_${safeName(c.card.name)}_${new Date().toISOString().slice(0, 10)}.json`;
 window.addEventListener("beforeunload", () => saveAll(true));
+document.addEventListener("visibilitychange", () => { if (document.hidden) saveAll(true); });
+
+/* ---------- блокировка ПИН-кодом */
+function renderLock(msg) {
+  document.body.innerHTML = `<div class="lockscr"><div class="lockbox"><div class="mark" aria-hidden="true"><span></span></div><h1>Финансовый анализ</h1><p class="muted">Данные клиентов в этом браузере защищены ПИН-кодом.</p>
+    <form id="lockF"><input class="inp" id="pinIn" type="password" inputmode="numeric" autocomplete="current-password" placeholder="ПИН-код" aria-label="ПИН-код"><button class="btn primary" type="submit">Открыть</button></form>
+    <p class="lockmsg" id="lockMsg">${esc(msg || "")}</p><button class="btn ghost" data-act="pinforgot">Забыли ПИН?</button><p class="copy">© 2026 Создан ОФКК Костанай</p></div></div><div id="toast" class="toast" role="status"></div>${DIALOG}`;
+  const f = $("#lockF"), inp = $("#pinIn"); inp.focus();
+  f.onsubmit = async e => { e.preventDefault(); $("#lockMsg").textContent = "Проверяю…"; try { await unlockPin(inp.value); C = null; armAutoLock(); render(); } catch (err) { $("#lockMsg").textContent = "Неверный ПИН-код"; inp.value = ""; inp.focus(); } };
+}
+async function lockNow() {
+  if (!LOCK.on) return;
+  clearTimeout(saveTimer); if (LOCK.key) { try { localStorage.setItem(STORE_ENC, await encStore()); } catch (e) { /* последняя версия уже сохранена */ } }
+  LOCK.key = null; CLIENTS = []; C = null; CACHE.clear(); renderLock("Заблокировано");
+}
+async function pinDialog() {
+  if (!cryptoOk()) { toast("Браузер не поддерживает шифрование"); return; }
+  const body = `<p>ПИН-код шифрует данные клиентов в этом браузере. Без него открыть их нельзя — <b>восстановить забытый ПИН невозможно</b>, поэтому держите резервную копию в файле.</p>
+    <div class="grid2" style="margin-top:10px"><label class="f"><span>Новый ПИН (не меньше 4 знаков)</span><input class="inp" id="p1" type="password" inputmode="numeric" autocomplete="new-password"></label><label class="f"><span>Повторите ПИН</span><input class="inp" id="p2" type="password" inputmode="numeric" autocomplete="new-password"></label></div>
+    <label class="f" style="margin-top:10px;max-width:300px"><span>Блокировать при бездействии</span><select class="inp" id="pAuto">${[[5, "через 5 минут"], [15, "через 15 минут"], [30, "через 30 минут"], [60, "через 1 час"], [0, "не блокировать"]].map(([v, t]) => `<option value="${v}"${autoLockMin() == v ? " selected" : ""}>${t}</option>`).join("")}</select></label>`;
+  const r = await dialog(LOCK.on ? "Сменить ПИН-код" : "Защитить ПИН-кодом", body, [{ t: "Отменить", v: null }, { t: "Сохранить", primary: true, v: d => ({ a: d.querySelector("#p1").value, b: d.querySelector("#p2").value, auto: +d.querySelector("#pAuto").value }) }]);
+  if (!r) return;
+  if (r.a.length < 4) { toast("ПИН — не меньше 4 знаков"); return; }
+  if (r.a !== r.b) { toast("ПИН-коды не совпадают"); return; }
+  try { localStorage.setItem("finkz.autolock", String(r.auto)); await setPin(r.a); armAutoLock(); render(); toast("Данные защищены ПИН-кодом"); } catch (e) { toast("Не удалось включить защиту: " + e.message); }
+}
+const autoLockMin = () => { try { const v = localStorage.getItem("finkz.autolock"); return v === null ? 15 : +v; } catch (e) { return 15; } };
+let autoT = null;
+function armAutoLock() { clearTimeout(autoT); const m = autoLockMin(); if (LOCK.on && LOCK.key && m > 0) autoT = setTimeout(lockNow, m * 60000); }
+for (const ev of ["pointerdown", "keydown", "wheel"]) document.addEventListener(ev, () => { if (LOCK.on && LOCK.key) armAutoLock(); }, { passive: true });
+document.addEventListener("click", async e => {
+  if (!e.target.closest("[data-act=pinforgot]")) return;
+  const ok = await dialog("Забыли ПИН-код?", "<p>Восстановить ПИН невозможно — данные зашифрованы. Можно удалить все данные в этом браузере и начать заново, а клиентов восстановить из файлов («Открыть файл клиента»).</p>", [{ t: "Отменить", v: false }, { t: "Удалить все данные", primary: true, v: true }]);
+  if (ok) { localStorage.removeItem(STORE_ENC); localStorage.removeItem(STORE); LOCK.on = false; LOCK.key = null; CLIENTS = []; C = null; render(); toast("Данные удалены"); }
+});
 render();

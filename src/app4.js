@@ -38,7 +38,15 @@ function fcHorizon() {
   const end = N(f.req.amt) > 0 ? Math.max(1, N(f.req.month)) + Math.max(1, N(f.req.term)) - 1 : 24;
   return Math.max(24, Math.min(84, Math.ceil(end / 12) * 12));
 }
+// прогноз считается один раз на изменение данных (сбрасывается вместе с кэшем расчётов)
+const FC_MEMO = new Map();
+{ const clr = CACHE.clear.bind(CACHE); CACHE.clear = () => { clr(); FC_MEMO.clear(); }; }
 function forecast(obj, s, Hset) {
+  const mk = obj + "|" + s + "|" + (Hset ?? "");
+  if (!FC_MEMO.has(mk)) FC_MEMO.set(mk, forecastRaw(obj, s, Hset));
+  return FC_MEMO.get(mk);
+}
+function forecastRaw(obj, s, Hset) {
   const f = fcParams(), L = lastPid(), H = Hset || fcHorizon();
   if (!L) return { err: "нет периодов" };
   const g = k => val(obj, k, L), A = annual(L);
@@ -191,6 +199,7 @@ function problems() {
   }
   // налоговые декларации и банковские обороты
   taxProblems(add);
+  creditProblems(add);
   // консолидация
   if (nComp() > 1) pers.forEach(p => {
     for (const [lab, st, d] of elimChecks(p.id)) if (st === "bad") add(lab.includes("подтвержд") ? "chk" : "risk", "elim", `Свод группы, ${p.label}: ${lab.toLowerCase()}`, isNum(d) ? `Разница ${fmt(d)}` : "",

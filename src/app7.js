@@ -354,6 +354,7 @@ const DocParse = (() => {
     ret: "Возврат платёжных документов",
     aid: "Фин. помощь, субсидии, штрафы и пени, вознаграждение, страховые",
     cash: "Взносы наличными",
+    grp: "Поступления от компаний группы",
   };
   const KNP_CAT = { "411": "loan", "413": "loan", "419": "loan", "421": "loan", "423": "loan", "429": "loan", "211": "conv", "213": "conv", "221": "conv", "223": "conv", "230": "conv", "342": "own", "343": "own", "324": "own", "329": "own", "331": "cash", "333": "aid" };
   const clean = s => low(s).replace(/[«»"'“”]/g, "").replace(/\b(тоо|ао|ип|кх|ооо|пк|гкп|рго|ргп|llp|jsc)\b/g, "").replace(/\s+/g, " ").trim();
@@ -367,6 +368,7 @@ const DocParse = (() => {
     if (/конверт|продаж\S*\s+(иностранн\S*\s+)?валют|обмен\S*\s+валют|покупк\S*\s+тенге|conversion|fx\s*deal/.test(p)) return ["conv", "назначение: конвертация / продажа валюты"];
     if (/(выдач|предоставлен|зачислен|получен)\S*\s+(\S+\s+){0,3}(кредит|займ|заем|транш)|транш|(по|согласно)\s+(\S+\s+){0,2}(кредитн\S*|заемн\S*|займ\S*)\s+(договор|соглашени|линии)|(кредитн|заемн)\S*\s+средств|возврат\S*\s+(\S+\s+){0,2}(займ|заем|кредит)|погашен\S*\s+(\S+\s+){0,2}(займ|заем)|овердрафт/.test(p)) return ["loan", "назначение: кредит / заём"];
     if (ownBin || ownName) return ["own", ownBin ? "отправитель — сама компания (БИН)" : "отправитель — сама компания"];
+    if (own.grp && t.bin && own.grp.includes(t.bin)) return ["grp", "отправитель — компания группы (БИН)"];
     if (/перевод\S*\s+(\S+\s+){0,2}(собственн|своих|сво\S+\s+средств|между\s+(своими\s+)?сч)|собственн\S+\s+(денежн\S+\s+)?средств|между\s+(своими\s+)?сч[её]т|с\s+(текущего\s+|депозитного\s+)?сч[её]та\s+на\s+(текущий\s+)?сч[её]т|возврат\S*\s+(\S+\s+)?(с\s+)?депозит|изъяти\S*\s+(\S+\s+)?депозит|закрыти\S*\s+депозит/.test(p)) return ["own", "назначение: перевод собственных средств"];
     if (/возврат/.test(p) && /(платеж|плат\.|п\/п|ошибочн|излишн|реквизит|не\s*зачисл|неверн|отказ|ненадлежащ|оплат|аванс|средств|денег|денежн)/.test(p)) return ["ret", "назначение: возврат платежа"];
     if (/субсиди/.test(p) && !gchp) return ["aid", "субсидия"];
@@ -379,6 +381,82 @@ const DocParse = (() => {
     if (kc && !(kc === "cash" && cashOk)) return [kc, "по коду назначения платежа " + t.knp];
     return null;
   }
+
+  /* ---------- списания по видам */
+  const DCATS = { loan: "Погашение кредитов и займов", int: "Вознаграждение по кредитам", tax: "Налоги и платежи в бюджет", pay: "Заработная плата", soc: "Пенсионные и социальные отчисления", cash: "Снятие наличных", own: "Переводы собственных средств", conv: "Покупка валюты", grp: "Компаниям группы", sup: "Поставщикам и прочие" };
+  function classifyDebit(t, own) {
+    if (!t.db) return null;
+    const p = low(`${t.purp} ${t.op} ${t.cp}`), k = t.knp;
+    if (t.bin && own.bins.includes(t.bin) || /перевод\S*\s+(\S+\s+){0,2}(собственн|своих|между\s+(своими\s+)?сч)|на\s+(свой|собственный)\s+сч|размещени\S*\s+(\S+\s+)?депозит/.test(p) || ["342", "343", "321", "322"].includes(k)) return "own";
+    if (own.grp && t.bin && own.grp.includes(t.bin)) return "grp";
+    if (/покупк\S*\s+(иностранн\S*\s+)?валют|конверт/.test(p) || ["211", "213", "230"].includes(k)) return "conv";
+    if (/(вознагражден|процент)\S*\s+(\S+\s+){0,3}(кредит|займ|заем|договор\S*\s+(банковского\s+)?займ)/.test(p) || ["422", "424"].includes(k) && /вознагр|процент/.test(p)) return "int";
+    if (/погашени\S*\s+(\S+\s+){0,3}(кредит|займ|заем|основного\s+долга|од\b)|возврат\S*\s+(\S+\s+){0,2}(кредит|займ|заем)|оплата\s+по\s+кредит/.test(p) || ["421", "423"].includes(k)) return "loan";
+    if (/(заработн|зарплат|оплат\S*\s+труда|отпускн|аванс\s+работник|перечислени\S*\s+на\s+карт\S*\s+работник)/.test(p) || ["311", "312"].includes(k)) return "pay";
+    if (/(опв|оппв|осмс|соцотчисл|социальн\S*\s+отчисл|пенсионн\S*\s+взнос|медицинск\S*\s+страх|гфсс|енпф)/.test(p) || ["010", "012", "013", "017", "019", "121", "122"].includes(k)) return "soc";
+    if (/(налог|ндс|кпн|ипн|бюджет|кбк|угд|пени\s+по\s+налог|госпошлин|сбор)/.test(p) || /^9\d\d$/.test(k)) return "tax";
+    if (/(снят\S*|выдач\S*)\s+(\S+\s+)?наличн|выдача\s+с\s+сч[её]та\s+наличн|cash\s+withdraw/.test(p) || k === "341") return "cash";
+    return "sup";
+  }
+
+  /* ---------- кредитный отчёт (ПКБ, ГКБ) */
+  const CRF = [
+    ["creditor", /^(кредитор|наименование\s+кредитора|финансов\S*\s+(институт|организаци)|банк\s*[-–]\s*кредитор)/],
+    ["type", /^(вид\s+(финансирования|кредита|договора|займа)|тип\s+(договора|кредита|финансирования))/],
+    ["num", /^(номер\s+договора|№\s*договора|код\s+договора|договор\s*№)/],
+    ["role", /^(роль(\s+субъекта)?|тип\s+субъекта|роль\s+в\s+договоре)/],
+    ["amount", /^(сумма\s+(договора|кредита|финансирования|займа)|общая\s+сумма|лимит|размер\s+кредита)/],
+    ["cur", /^валюта/],
+    ["start", /^(дата\s+(начала|выдачи|заключения|получения)|начало\s+срока)/],
+    ["end", /^(дата\s+(окончания|погашения|завершения)|срок\s+(погашения|окончания)|окончание\s+срока|плановая\s+дата\s+погашения)/],
+    ["bal", /^(остаток(\s+основного\s+долга|\s+задолженности)?|непогашенн\S*\s+(сумма|часть)|сумма\s+(непогашенн|задолженност)|текущ\S*\s+задолженност|задолженность\s+по\s+основному)/],
+    ["odAmt", /^(сумма\s+просроч|просроченн\S*\s+(сумм|задолжен|взнос))/],
+    ["maxOd", /^(максимальн\S*\s+(количество\s+)?(дней\s+)?просрочк|макс\S*\s+просрочк)/],
+    ["odDays", /^((текущее\s+)?количество\s+дней\s+просрочки|дни\s+просрочки|дней\s+просрочки|просрочка,?\s+дн)/],
+    ["pay", /^(сумма\s+(ежемесячного|периодического|очередного)\s+платежа|размер\s+(ежемесячного\s+)?платежа|ежемесячн\S*\s+платеж)/],
+    ["rate", /^((годовая\s+)?(процентная\s+)?ставка(\s+вознаграждения)?|гэсв|ставка)/],
+  ];
+  function crLabel(s) { const t = low(s).replace(/[:*]+\s*$/, "").trim(); for (const [k, re] of CRF) if (re.test(t)) return k; return null; }
+  function isCredit(pdf) {
+    const txt = low(allLines(pdf).slice(0, 60).map(l => l.text).join(" "));
+    let n = 0; for (const l of allLines(pdf)) for (const c of l.cells.slice(0, 2)) if (crLabel(c.s.split(":")[0])) n++;
+    return /кредитн\S*\s+(отчет|истори)|кредитн\S*\s+бюро|пкб|гкб/.test(txt) ? n : Math.floor(n / 3);
+  }
+  function parseCredit(pdf) {
+    const L = allLines(pdf), out = []; let cur = null, status = "active";
+    const txt = L.map(l => norm(l.text)).join("\n");
+    const put = (k, v) => {
+      if (v === undefined || v === null || String(v).trim() === "") return;
+      if (k === "creditor" && cur && cur.creditor) cur = null;
+      if (!cur) { cur = { status }; out.push(cur); }
+      if (cur[k] === undefined) cur[k] = String(v).trim();
+    };
+    for (const l of L) {
+      const lt = low(l.text);
+      if (/(действующ|текущ|открыт)\S*\s+(договор|кредит|обязательств)/.test(lt) && l.cells.length <= 2) { status = "active"; cur = null; continue; }
+      if (/(завершенн|погашенн|закрыт)\S*\s+(договор|кредит|обязательств)/.test(lt) && l.cells.length <= 2) { status = "closed"; cur = null; continue; }
+      for (let i = 0; i < l.cells.length; i++) {
+        const s = norm(l.cells[i].s), ci = s.indexOf(":");
+        let k = crLabel(ci > 0 ? s.slice(0, ci) : s);
+        if (!k) continue;
+        let v = ci > 0 ? s.slice(ci + 1).trim() : "";
+        if (!v && l.cells[i + 1] && !crLabel(l.cells[i + 1].s)) { v = l.cells[i + 1].s; i++; }
+        put(k, v);
+      }
+    }
+    const num = s => (s ? amt(String(s).replace(/[^\d\s.,()−–-]/g, "")) : null);
+    const loans = out.filter(c => c.creditor || c.bal || c.amount).map(c => ({
+      creditor: c.creditor || "", type: c.type || "", num: c.num || "", role: c.role || "", status: c.status,
+      amount: num(c.amount), cur: curCode(c.cur || "") || (c.cur ? c.cur : "KZT"), start: toISO(c.start || "") || "", end: toISO(c.end || "") || "",
+      bal: num(c.bal), odAmt: num(c.odAmt), odDays: num(c.odDays), maxOd: num(c.maxOd), pay: num(c.pay), rate: c.rate ? (amt(String(c.rate).replace(/[^\d.,]/g, "")) ?? null) : null,
+    }));
+    for (const x of loans) { if (/закрыт|погашен|завершен/i.test(x.type + " " + (x.role || ""))) x.status = "closed"; if (isNum(x.rate) && x.rate > 1) x.rate = x.rate / 100; }
+    const dm = /(?:дата\s+(?:формирования|отчета|выдачи\s+отчета)|сформирован\S*)\D{0,20}(\d{2}\.\d{2}\.\d{4})/i.exec(txt);
+    const binM = /(?:бин|иин)[^\d]{0,30}(\d{12})/i.exec(squeeze(L.slice(0, 40).map(l => l.text).join(" ")));
+    const bureau = /первое\s+кредитное\s+бюро|пкб/i.test(txt) ? "ПКБ" : /государственн\S*\s+кредитн\S*\s+бюро|гкб/i.test(txt) ? "ГКБ" : "кредитное бюро";
+    return { bureau, date: dm ? toISO(dm[1]) : "", bin: binM ? binM[1] : "", loans };
+  }
+  const isNum = v => typeof v === "number" && isFinite(v);
 
   /* ---------- Excel как «страница» из строк и ячеек — те же разборщики работают и для таблиц */
   function sheetToPdf(sheets) {
@@ -420,7 +498,8 @@ const DocParse = (() => {
   const pad = n => String(n).padStart(2, "0");
 
   function detect(pdf) {
-    const nd = isDecl(pdf), ns = isStmt(pdf), nb = isBank(pdf);
+    const nd = isDecl(pdf), ns = isStmt(pdf), nb = isBank(pdf), nc = isCredit(pdf);
+    if (nc >= 6 && nc > nd && ns < 5) return "credit";
     if (nd >= 3 && nd * 2 >= nb) return "decl";
     if (ns >= 3) return "stmt";
     if (nb >= 3) return "bank";
@@ -429,12 +508,12 @@ const DocParse = (() => {
   async function read(buf) {
     const pdf = await PdfReader.read(buf);
     const kind = pdf.noText ? null : detect(pdf);
-    return { pdf, kind, decl: kind === "decl" ? parseDecl(pdf) : null, bank: kind === "bank" ? parseBank(pdf) : null, stmt: kind === "stmt" ? parseStmt(pdf) : null };
+    return { pdf, kind, decl: kind === "decl" ? parseDecl(pdf) : null, bank: kind === "bank" ? parseBank(pdf) : null, stmt: kind === "stmt" ? parseStmt(pdf) : null, credit: kind === "credit" ? parseCredit(pdf) : null };
   }
   function readSheets(sheets) {
     const pdf = fixExcelDates(sheetToPdf(sheets));
     const kind = detect(pdf);
-    return { pdf, kind, decl: kind === "decl" ? parseDecl(pdf) : null, bank: kind === "bank" ? parseBank(pdf) : null, stmt: kind === "stmt" ? parseStmt(pdf) : null };
+    return { pdf, kind, decl: kind === "decl" ? parseDecl(pdf) : null, bank: kind === "bank" ? parseBank(pdf) : null, stmt: kind === "stmt" ? parseStmt(pdf) : null, credit: kind === "credit" ? parseCredit(pdf) : null };
   }
-  return { read, readSheets, sheetToPdf, parseDecl, parseBank, parseStmt, classify, clean, pickKeys, isDecl, isBank, isStmt, monthLabel, headerSem, amt, toISO, FORMS, KEYS, CATS };
+  return { read, readSheets, sheetToPdf, parseDecl, parseBank, parseStmt, parseCredit, classify, classifyDebit, DCATS, clean, pickKeys, isDecl, isBank, isStmt, monthLabel, headerSem, amt, toISO, FORMS, KEYS, CATS };
 })();

@@ -45,13 +45,45 @@ const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "
 const uid = () => Math.random().toString(36).slice(2, 10);
 
 /* ---------------------------------------------------------------- хранение: только в этом браузере + файл клиента */
-const STORE = "finkz.clients.v1";
+const STORE = "finkz.clients.v1", STORE_ENC = "finkz.clients.enc.v1";
+// ПИН-код: данные в браузере шифруются (AES-GCM, ключ из ПИН через PBKDF2); ключ живёт только в памяти открытой вкладки
+const LOCK = { on: false, key: null, salt: null };
 let CLIENTS = loadAll();
-function loadAll() { try { return JSON.parse(localStorage.getItem(STORE) || "[]"); } catch (e) { return []; } }
-let saveTimer = null, lastSaved = null;
+function loadAll() {
+  try { if (localStorage.getItem(STORE_ENC)) { LOCK.on = true; return []; } return JSON.parse(localStorage.getItem(STORE) || "[]"); } catch (e) { return []; }
+}
+const b64 = u8 => { let s = ""; for (let i = 0; i < u8.length; i += 8192) s += String.fromCharCode.apply(null, u8.subarray(i, i + 8192)); return btoa(s); };
+const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+const cryptoOk = () => !!(globalThis.crypto && crypto.subtle);
+async function pinKey(pin, salt) {
+  const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(pin), "PBKDF2", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey({ name: "PBKDF2", salt, iterations: 250000, hash: "SHA-256" }, base, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
+}
+async function encStore() {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, LOCK.key, new TextEncoder().encode(JSON.stringify(CLIENTS))));
+  return JSON.stringify({ v: 1, salt: b64(LOCK.salt), iv: b64(iv), ct: b64(ct) });
+}
+async function unlockPin(pin) {
+  const o = JSON.parse(localStorage.getItem(STORE_ENC)), salt = unb64(o.salt), key = await pinKey(pin, salt);
+  const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: unb64(o.iv) }, key, unb64(o.ct));   // неверный ПИН → ошибка
+  LOCK.key = key; LOCK.salt = salt; CLIENTS = JSON.parse(new TextDecoder().decode(pt));
+}
+async function setPin(pin) {
+  LOCK.salt = crypto.getRandomValues(new Uint8Array(16)); LOCK.key = await pinKey(pin, LOCK.salt); LOCK.on = true;
+  localStorage.setItem(STORE_ENC, await encStore()); localStorage.removeItem(STORE);
+}
+function removePin() { LOCK.on = false; LOCK.key = null; localStorage.setItem(STORE, JSON.stringify(CLIENTS)); localStorage.removeItem(STORE_ENC); }
+let saveTimer = null, lastSaved = null, savePending = null;
 function saveAll(now) {
   clearTimeout(saveTimer);
   const go = () => {
+    if (LOCK.on) {
+      if (!LOCK.key) return;
+      savePending = encStore().then(v => { localStorage.setItem(STORE_ENC, v); lastSaved = new Date(); paintSaved(); })
+        .catch(e => toast("Не удалось сохранить в браузере: " + e.message + ". Сохраните файл клиента.")).finally(() => (savePending = null));
+      return;
+    }
     try { localStorage.setItem(STORE, JSON.stringify(CLIENTS)); lastSaved = new Date(); paintSaved(); }
     catch (e) { toast("Не удалось сохранить в браузере: " + e.message + ". Сохраните файл клиента."); }
   };
@@ -74,7 +106,7 @@ function newClient(name) {
     companies: [{ name: "", bin: "", role: S.lists.role[0], form: S.lists.form[0], vat: "Да", regime: S.lists.regime[0] }],
     periods: [y - 3, y - 2, y - 1].map(yy => ({ id: uid(), label: String(yy), date: `${yy}-12-31`, basis: "Годовой", months: 12 })),
     obj: 0, data: {}, src: {}, elim: {}, elimOk: {}, concl: { text: "", decision: "", conditions: "", status: "Черновик" }, log: [],
-    custom: {}, settings: { units: "auto", prev: false }, decl: [], bank: [], dset: { pct: 0.02, bpct: 0.1 }
+    custom: {}, settings: { units: "auto", prev: false }, decl: [], bank: [], dset: { pct: 0.02, bpct: 0.1 }, cr: [], coll: [], guar: []
   };
 }
 function demoClient() {
@@ -165,6 +197,12 @@ const KIND = { liq_cur: "x", liq_quick: "x", liq_abs: "x", nwc: "m", gm: "p", eb
   dso: "d", dio: "d", dpo: "d", cycle: "d", asset_turn: "x", cfo: "m", capex_est: "m", fcf: "m", cfo_conv: "p", dscr_hist: "x", cfo_dds: "m" };
 RAT.cfo_dds = { key: "cfo_dds", label: "Операционный денежный поток по ОДДС, тыс. тг", formula: "Поступления − выбытие по операционной деятельности (если ОДДС загружен)", dir: null };
 const NP = "н/п";
+// свои нормативы коэффициентов (хранятся в браузере, действуют для всех клиентов)
+const RAT_DEF = {}; for (const k of Object.keys(RAT)) RAT_DEF[k] = { green: RAT[k].green, red: RAT[k].red, crit: RAT[k].crit };
+const RATN_KEY = "finkz.ratios.v1";
+let RATN = (() => { try { return JSON.parse(localStorage.getItem(RATN_KEY) || "{}"); } catch (e) { return {}; } })();
+function applyRatn() { for (const k of Object.keys(RAT_DEF)) Object.assign(RAT[k], RAT_DEF[k], RATN[k] || {}); }
+applyRatn();
 function ratio(obj, key, pid) {
   const g = k => val(obj, k, pid), pp = prevPid(pid), gp = k => (pp ? val(obj, k, pp) : null);
   const div = (a, b) => (allNum(a, b) && b !== 0 ? a / b : null);

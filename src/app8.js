@@ -98,10 +98,11 @@ function csvSheets(buf) {
 }
 
 /* ---------- банк: операции, чистые кредитовые обороты */
-const CAT_SHORT = { loan: "Кредиты, займы", conv: "Конвертация", own: "Свои средства", ret: "Возвраты", aid: "Помощь, субсидии, штрафы, %", cash: "Наличные" };
+const CAT_SHORT = { loan: "Кредиты, займы", conv: "Конвертация", own: "Свои средства", ret: "Возвраты", aid: "Помощь, субсидии, штрафы, %", cash: "Наличные", grp: "Компании группы" };
 function ownOf(k) {
   const x = comp(k) || {}, bins = [x.bin, k === 1 ? C.card.bin : ""].map(b => String(b || "").replace(/\D/g, "")).filter(b => b.length === 12);
-  return { bins, names: [DocParse.clean(x.name || ""), k === 1 ? DocParse.clean(C.card.name || "") : ""].filter(n => n.length > 3) };
+  const grp = C.dset?.grpEx === false ? [] : C.companies.map((y, i) => (i + 1 === k ? "" : String(y.bin || "").replace(/\D/g, ""))).filter(b => b.length === 12 && !bins.includes(b));
+  return { bins, grp, names: [DocParse.clean(x.name || ""), k === 1 ? DocParse.clean(C.card.name || "") : ""].filter(n => n.length > 3) };
 }
 function txCat(doc, i, t, own) {
   const o = doc.ov?.[i];
@@ -278,7 +279,8 @@ function pageBank() {
   if (!bank.length) return h + `<div class="empty"><h2>Выписки и справки не загружены</h2><p class="muted">Загрузите выписки по счетам (PDF или Excel из интернет-банка) — по ним считаются чистые кредитовые обороты. Справки об оборотах дают только общие обороты, без исключений.</p><button class="btn primary" data-act="docdlg" data-mode="bank">Загрузить выписки и справки</button></div>`;
   h += `<section class="panel"><h2>Сверка с отчётностью — ${esc(compName(k))}</h2><p class="hint">Тыс. тг. ${LEGEND}. Доля чистых оборотов в выручке с НДС: 80–150 % — норма.</p>
     ${checksTable(k, BANK_IDS, "Для периодов анализа нет оборотов: проверьте месяцы в выписках и справках или заполните выручку в ОПиУ.")}
-    <div class="grid2 tight" style="margin-top:12px;max-width:420px"><label class="f"><span>Допуск сверки с ОДДС, %</span><input class="inp num" data-dset="bpct" value="${esc(fmt(N(C.dset.bpct) * 100, "m1"))}"></label></div></section>`;
+    <div class="grid2 tight" style="margin-top:12px;max-width:420px"><label class="f"><span>Допуск сверки с ОДДС, %</span><input class="inp num" data-dset="bpct" value="${esc(fmt(N(C.dset.bpct) * 100, "m1"))}"></label></div>
+    ${nComp() > 1 ? `<label style="display:block;margin-top:10px"><input type="checkbox" data-grpex ${C.dset.grpEx !== false ? "checked" : ""}> Исключать поступления от других компаний группы (по БИН из «Карточки»)</label>` : ""}</section>`;
   // помесячно
   const M = bankMonths(k), ms = Object.keys(M).sort();
   if (ms.length) {
@@ -302,7 +304,7 @@ function pageBank() {
           : `<td>${fmt(cr / 1000)}</td><td>${b.kind === "stmt" ? fmt(ex / 1000) : "—"}</td><td>${fmt((b.kind === "stmt" ? cr - ex : cr) / 1000)}</td>`}
         <td style="white-space:nowrap"><button class="btn ghost" data-bankedit="${b.id}">${b.kind === "stmt" ? "Операции" : "Открыть"}</button><button class="btn ghost danger" data-bankdel="${b.id}" title="Удалить" aria-label="Удалить">×</button></td></tr>`;
     }).join("")}</tbody></table></div></section>`;
-  h += fxPanel(k);
+  h += bankExtraHTML(k) + fxPanel(k);
   return h;
 }
 function fxNeeded(k) {
@@ -362,9 +364,16 @@ async function importDocs(files, kDef, mode) {
     catch (e) { rep.push({ file: file.name, err: /паролем/.test(e.message) ? e.message + " — снимите пароль или введите суммы вручную" : e.message }); continue; }
     let kind = r.kind;
     if (!kind) {
-      kind = await dialog("Что это за документ?", `<p>Не удалось уверенно определить тип документа <b>${esc(file.name)}</b>.</p>`, [{ t: "Пропустить", v: null }, { t: "Справка об оборотах", v: "bank" }, { t: "Выписка по счёту", v: "stmt" }, { t: "Декларация", primary: mode === "tax", v: "decl" }]);
+      kind = await dialog("Что это за документ?", `<p>Не удалось уверенно определить тип документа <b>${esc(file.name)}</b>.</p>`, [{ t: "Пропустить", v: null }, { t: "Кредитный отчёт", v: "credit" }, { t: "Справка об оборотах", v: "bank" }, { t: "Выписка по счёту", v: "stmt" }, { t: "Декларация", primary: mode === "tax", v: "decl" }]);
       if (!kind) { rep.push({ file: file.name, err: "пропущено" }); continue; }
-      if (kind === "decl") r.decl = DocParse.parseDecl(r.pdf); else if (kind === "stmt") r.stmt = DocParse.parseStmt(r.pdf); else r.bank = DocParse.parseBank(r.pdf);
+      if (kind === "decl") r.decl = DocParse.parseDecl(r.pdf); else if (kind === "credit") r.credit = DocParse.parseCredit(r.pdf); else if (kind === "stmt") r.stmt = DocParse.parseStmt(r.pdf); else r.bank = DocParse.parseBank(r.pdf);
+    }
+    if (kind === "credit") {
+      const cr = r.credit;
+      if (!cr.loans.length) { rep.push({ file: file.name, err: "в отчёте не найдено договоров (нужны поля «Кредитор», «Сумма», «Остаток»…). Добавьте кредиты вручную" }); continue; }
+      const n = await creditImport(cr, compByBin(cr.bin) || kDef, file.name);
+      rep.push(n ? { file: file.name, page: "credit", ok: `${cr.bureau}: договоров ${n}` } : { file: file.name, err: "не сохранено" });
+      continue;
     }
     if (kind === "decl") {
       const d = r.decl, keys = DocParse.pickKeys(d, DMAP), vals = {};
@@ -397,7 +406,7 @@ async function importDocs(files, kDef, mode) {
 }
 async function docDialog(mode) {
   const compsOpts = C.companies.map((x, i) => `<option value="${i + 1}"${COMP_TAB === i + 1 ? " selected" : ""}>К${i + 1} · ${esc(x.name || "без названия")}</option>`).join("");
-  const what = mode === "tax" ? "Налоговые декларации (PDF из кабинета налогоплательщика или Excel)" : "Выписки по счетам и справки об оборотах (PDF или Excel из интернет-банка, CSV)";
+  const what = mode === "credit" ? "Кредитные отчёты ПКБ или ГКБ (PDF или Excel)" : mode === "tax" ? "Налоговые декларации (PDF из кабинета налогоплательщика или Excel)" : "Выписки по счетам и справки об оборотах (PDF или Excel из интернет-банка, CSV)";
   const body = `<p class="muted">${what} — можно сразу несколько файлов. Для сканов суммы вводятся вручную. Файлы читаются здесь же, в браузере, и никуда не отправляются.</p>
     <label class="f" style="margin:12px 0"><span>Компания (если в документе нет БИН из карточки)</span><select class="inp" id="pComp">${compsOpts}</select></label>
     <label class="drop" id="pDrop"><input type="file" id="pFiles" multiple accept=".pdf,.xlsx,.xlsm,.csv,.xls,application/pdf" style="display:none"><span id="pTxt">Перетащите файлы сюда или нажмите, чтобы выбрать</span></label>`;
@@ -409,7 +418,7 @@ async function docDialog(mode) {
     drop.ondragleave = () => drop.classList.remove("over");
     drop.ondrop = e => { e.preventDefault(); drop.classList.remove("over"); set(e.dataTransfer.files); };
   });
-  const k = await dialog(mode === "tax" ? "Загрузить декларации" : "Загрузить выписки и справки", body, [{ t: "Отменить", v: null }, { t: "Загрузить", primary: true, v: () => +$("#pComp").value }]);
+  const k = await dialog(mode === "credit" ? "Загрузить кредитный отчёт" : mode === "tax" ? "Загрузить декларации" : "Загрузить выписки и справки", body, [{ t: "Отменить", v: null }, { t: "Загрузить", primary: true, v: () => +$("#pComp").value }]);
   if (!k || !files.length) { if (k) toast("Файлы не выбраны"); return; }
   await runDocImport(files, k, mode);
 }
@@ -417,7 +426,7 @@ async function runDocImport(files, k, mode) {
   const rep = await importDocs(files, k, mode);
   const pages = new Set(rep.filter(r => r.page).map(r => r.page));
   PAGE = pages.size === 1 ? [...pages][0] : mode || "bank"; render();
-  await dialog("Результат загрузки", rep.map(r => `<div class="logline"><b>${esc(r.file)}</b>: ${r.err ? stChip("crit", "не загружено") + " " + esc(r.err) : stChip("ok", r.page === "tax" ? "Налоги" : "Банк") + " " + esc(r.ok)}</div>`).join(""), [{ t: "Готово", primary: true, v: true }]);
+  await dialog("Результат загрузки", rep.map(r => `<div class="logline"><b>${esc(r.file)}</b>: ${r.err ? stChip("crit", "не загружено") + " " + esc(r.err) : stChip("ok", r.page === "tax" ? "Налоги" : r.page === "credit" ? "Кредиты" : "Банк") + " " + esc(r.ok)}</div>`).join(""), [{ t: "Готово", primary: true, v: true }]);
 }
 
 /* ---------- выписка: просмотр операций и классификация */
@@ -680,7 +689,11 @@ function demoDocs(c) {
   for (let m = 1; m <= 12; m++) {
     const mm = String(m).padStart(2, "0"), month = r1 * 1000 * vat * 0.93 * seas[m - 1] / tot;
     buyers.forEach(([cp, b], j) => txs.push({ d: `${y}-${mm}-${String(5 + j * 8).padStart(2, "0")}`, doc: String(m * 10 + j), cp, bin: b, knp: "710", purp: `Оплата за продукцию по договору поставки №${j + 1}, в т.ч. НДС`, op: "", iik: "", db: 0, cr: Math.round(month / 3 * 100) / 100 }));
-    txs.push({ d: `${y}-${mm}-25`, doc: String(m * 10 + 5), cp: "ТОО «Поставщик Зерно»", bin: "100000000021", knp: "710", purp: "Оплата за зерно по договору №7", op: "", iik: "", db: Math.round(month * 0.8 * 100) / 100, cr: 0 });
+    txs.push({ d: `${y}-${mm}-25`, doc: String(m * 10 + 5), cp: "ТОО «Поставщик Зерно»", bin: "100000000021", knp: "710", purp: "Оплата за зерно по договору №7", op: "", iik: "", db: Math.round(month * 0.62 * 100) / 100, cr: 0 });
+    txs.push({ d: `${y}-${mm}-10`, doc: "", cp: "АО «Пример Банк»", bin: "100000000099", knp: "421", purp: "Погашение основного долга по договору банковского займа №17", op: "", iik: "", db: 7900000, cr: 0 });
+    txs.push({ d: `${y}-${mm}-10`, doc: "", cp: "АО «Пример Банк»", bin: "100000000099", knp: "423", purp: "Вознаграждение по кредиту, договор №17", op: "", iik: "", db: 4200000, cr: 0 });
+    txs.push({ d: `${y}-${mm}-05`, doc: "", cp: "АО «Пример Банк»", bin: "100000000099", knp: "311", purp: "Перечисление заработной платы работникам за месяц", op: "", iik: "", db: 14500000, cr: 0 });
+    txs.push({ d: `${y}-${mm}-20`, doc: "", cp: "УГД по г. Костанай", bin: "100000000088", knp: "911", purp: "КБК 101101 Корпоративный подоходный налог, НДС", op: "", iik: "", db: 9800000, cr: 0 });
   }
   const ex = [[`${y}-03-02`, "АО «Пример Банк»", "100000000099", "411", "Выдача кредита по договору банковского займа №17", 150000000],
     [`${y}-04-10`, c.companies[0].name, bin, "342", "Перевод собственных средств с текущего счета", 25000000],
@@ -691,5 +704,16 @@ function demoDocs(c) {
     [`${y}-11-12`, "Иванов И.И.", "", "331", "Взнос наличных денег на текущий счет", 4000000]];
   for (const [d, cp, b, knp, purp, cr] of ex) txs.push({ d, doc: "", cp, bin: b, knp, purp, op: "", iik: "", db: 0, cr });
   txs.sort((a, b) => a.d.localeCompare(b.d));
+  // кредитный отчёт, залог и гарант для примера
+  c.cr = c.cr || []; c.coll = c.coll || []; c.guar = c.guar || [];
+  const dv = key => N(c.data?.[1]?.[key]?.[L.id]), debt = (dv("stloan") + dv("cpltd") + dv("ltloan") + dv("lease")) * 1000;
+  if (debt > 0) {
+    c.cr.push({ id: uid(), k: 1, src: "пример", auto: true, bureau: "ПКБ", date: `${y}-12-31`, creditor: "АО «Пример Банк»", type: "Кредитная линия", role: "Заемщик", status: "active", amount: Math.round(debt * 0.9), cur: "KZT", start: `${y - 2}-03-15`, end: `${y + 3}-03-15`, bal: Math.round(debt * 0.65), pay: Math.round(debt * 0.65 / 39), rate: 0.175, odDays: 0, maxOd: 0, scheme: "Дифференцированный", fc: true });
+    c.cr.push({ id: uid(), k: 1, src: "пример", auto: true, bureau: "ПКБ", date: `${y}-12-31`, creditor: "АО «Второй Банк»", type: "Кредит", role: "Заемщик", status: "active", amount: Math.round(debt * 0.5), cur: "KZT", start: `${y - 1}-06-01`, end: `${y + 2}-06-01`, bal: Math.round(debt * 0.38), pay: Math.round(debt * 0.38 / 18), rate: 0.19, odDays: 0, maxOd: 12, scheme: "Аннуитет", fc: true });
+    c.cr.push({ id: uid(), k: 1, src: "пример", auto: true, bureau: "ПКБ", date: `${y}-12-31`, creditor: "АО «Старый Банк»", type: "Кредит", role: "Заемщик", status: "closed", amount: 80000000, cur: "KZT", start: `${y - 6}-02-01`, end: `${y - 3}-02-01`, bal: 0, pay: 0, rate: null, odDays: 0, maxOd: 5, scheme: "Дифференцированный", fc: false });
+  }
+  const amt = N(c.card.amount);
+  if (amt) { c.coll.push({ type: "Недвижимость", desc: "Зерносклад 5 000 т, г. Костанай (вымышл.)", owner: c.companies[0].name, market: Math.round(amt * 0.9), disc: 0.3 }); c.coll.push({ type: "Спецтехника и оборудование", desc: "Зерноуборочные комбайны, 4 ед.", owner: c.companies[1]?.name || c.companies[0].name, market: Math.round(amt * 0.8), disc: 0.5 }); }
+  c.guar.push({ name: "Учредитель (вымышленный)", kind: "Учредитель (физ. лицо)", amt: amt || null, note: "личная гарантия" });
   c.bank.push({ id: uid(), kind: "stmt", k: 1, file: "пример", bank: "АО «Пример Банк»", acc: "KZ000000000000000001", cur: "KZT", from: `01.01.${y}`, to: `31.12.${y}`, txs, ov: {}, t: Date.now() });
 }
