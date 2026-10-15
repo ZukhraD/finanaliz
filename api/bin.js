@@ -42,7 +42,7 @@ module.exports = async (req, res) => {
   for (const url of SOURCES) {
     try {
       const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 8000);
-      const r = await fetch(url(bin), { signal: ctl.signal, headers: { accept: "application/json", "user-agent": "Mozilla/5.0 (finanaliz BIN lookup)" } });
+      const r = await fetch(url(bin), { signal: ctl.signal, headers: { accept: "application/json, text/plain, */*", "accept-language": "ru-RU,ru;q=0.9", referer: "https://stat.gov.kz/ru/juridical/by/bin/", "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36" } });
       clearTimeout(timer);
       if (!r.ok) { lastErr = "источник ответил " + r.status; continue; }
       const j = await r.json();

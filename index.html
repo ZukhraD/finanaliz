@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; font-src data:; img-src data: blob:; connect-src 'self' blob: data:">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; font-src data:; img-src data: blob:; connect-src 'self' https://stat.gov.kz https://old.stat.gov.kz blob: data:">
 <title>Финансовый анализ РК</title>
 <style>:root {
   --paper: #F3F6F6; --surface: #FFFFFF; --ink: #17262E; --muted: #5B6B73; --rule: #D5DDE0; --rule-soft: #E7ECEE;
@@ -3844,25 +3844,69 @@ function binDate(s) {
   if ((m = /^(\d{2})[.\/](\d{2})[.\/](\d{4})/.exec(s))) return `${m[1]}.${m[2]}.${m[3]}`;
   return s;
 }
+const BIN_URLS = b => [`https://stat.gov.kz/api/juridical/counter/api/?bin=${b}&lang=ru`, `https://old.stat.gov.kz/api/juridical/counter/api/?bin=${b}&lang=ru`];
+const BIN_SRC = "Бюро национальной статистики (stat.gov.kz)";
+function binNorm(j) {
+  const o = j && (j.obj || j.data || j.result || j);
+  if (!o || typeof o !== "object") return null;
+  const pk = (...ks) => { for (const k of ks) if (o[k] != null && String(o[k]).trim() !== "") return String(o[k]).trim(); return ""; };
+  const name = pk("name", "nameRu", "fullName"); if (!name) return null;
+  let sec = o.secondOkeds ?? o.secondOked ?? ""; if (Array.isArray(sec)) sec = sec.join(",");
+  return { bin: pk("bin", "BIN"), name, regDate: pk("registerDate", "regDate", "registrationDate"), okedCode: pk("okedCode", "oked"), okedName: pk("okedName"),
+    secondOkeds: String(sec || "").split(/[,;\s]+/).filter(Boolean), krp: pk("krpName"), kse: pk("kseName"), kfs: pk("kfsName"),
+    address: pk("katoAddress", "address", "legalAddress"), director: pk("fio", "director", "head"), ip: o.ip === true || o.ip === "true" };
+}
 async function binFetch(bin) {
-  if (location.protocol === "file:") throw new Error("кнопка работает только на сайте (finanaliz…vercel.app). В файле, открытом с компьютера, сетевых запросов нет");
-  let r;
-  try { r = await fetch("/api/bin?bin=" + encodeURIComponent(bin), { headers: { accept: "application/json" }, cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer" }); }
-  catch (e) { throw new Error("нет связи с сервером. Проверьте интернет"); }
-  let j = null; try { j = await r.json(); } catch (e) { /* ниже */ }
-  if (!j || !j.ok) throw new Error(j?.error || "сервер ответил " + r.status);
-  return j;
+  if (location.protocol === "file:") throw new Error("автоматический запрос работает только на сайте (finanaliz…vercel.app)");
+  const errs = [];
+  // 1) напрямую из браузера пользователя (запрос идёт с казахстанского адреса пользователя)
+  for (const url of BIN_URLS(bin)) {
+    try {
+      const r = await fetch(url, { headers: { accept: "application/json" }, cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer", mode: "cors" });
+      if (!r.ok) { errs.push("stat.gov.kz ответил " + r.status); continue; }
+      const j = await r.json();
+      if (j && j.success === false) throw Object.assign(new Error("компания с таким БИН не найдена в Бюро национальной статистики"), { final: true });
+      const d = binNorm(j); if (d) return { source: BIN_SRC, data: d };
+      errs.push("непонятный ответ stat.gov.kz");
+    } catch (e) { if (e.final) throw e; errs.push("браузер не получил ответ stat.gov.kz напрямую"); }
+  }
+  // 2) через сервер сайта
+  try {
+    const r = await fetch("/api/bin?bin=" + encodeURIComponent(bin), { headers: { accept: "application/json" }, cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer" });
+    let j = null; try { j = await r.json(); } catch (e) { /* ниже */ }
+    if (j && j.ok) return j;
+    if (r.status === 404 && j) throw Object.assign(new Error(j.error), { final: true });
+    errs.push("сервер сайта: " + (j?.error || "ответ " + r.status));
+  } catch (e) { if (e.final) throw e; errs.push("сервер сайта недоступен"); }
+  throw new Error([...new Set(errs)].join("; "));
+}
+async function binManual(bin, why) {
+  const links = BIN_URLS(bin).map((u, n) => `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${n ? "запасная ссылка" : "Открыть ответ stat.gov.kz"}</a>`).join(" · ");
+  const body = `<p>Автоматически получить данные не удалось: ${esc(why)}.</p>
+    <p><b>Можно вручную, это минута:</b></p>
+    <ol><li>Нажмите ${links} — откроется новая вкладка с текстом в фигурных скобках.</li>
+    <li>Выделите всё (Ctrl+A), скопируйте (Ctrl+C) и вставьте сюда (Ctrl+V).</li></ol>
+    <textarea class="inp" id="binPaste" rows="6" style="width:100%;font-family:monospace;font-size:12px" placeholder='{"success":true,"obj":{"bin":"…","name":"…"}}'></textarea>`;
+  const txt = await dialog("Данные по БИН вручную", body, [{ t: "Отменить", v: null }, { t: "Разобрать", primary: true, v: d => d.querySelector("#binPaste").value }]);
+  if (!txt || !txt.trim()) return null;
+  let j; try { const m = txt.indexOf("{"); j = JSON.parse(txt.slice(m, txt.lastIndexOf("}") + 1)); } catch (e) { toast("Не получилось разобрать текст — скопируйте всю страницу ответа"); return null; }
+  if (j && j.success === false) { toast("stat.gov.kz: компания с таким БИН не найдена"); return null; }
+  const d = binNorm(j); if (!d) { toast("В тексте нет наименования компании"); return null; }
+  return { source: BIN_SRC, data: d };
 }
 async function binLookup(i) {
   const x = C.companies[i]; if (!x) return;
   const bin = String(x.bin || (i === 0 ? C.card.bin : "") || "").replace(/\D/g, "");
   if (!/^\d{12}$/.test(bin)) { toast("Сначала укажите БИН/ИИН из 12 цифр"); return; }
-  const ok = await dialog("Подтянуть данные по БИН", `<p>Сайт отправит <b>только БИН ${esc(bin)}</b> в Бюро национальной статистики (stat.gov.kz) через сервер сайта и получит открытые регистрационные данные: наименование, дату регистрации, ОКЭД, руководителя, адрес.</p>
+  const ok = await dialog("Подтянуть данные по БИН", `<p>Сайт отправит <b>только БИН ${esc(bin)}</b> в Бюро национальной статистики (stat.gov.kz) — из вашего браузера, а если не выйдет, через сервер сайта — и получит открытые регистрационные данные: наименование, дату регистрации, ОКЭД, руководителя, адрес.</p>
     <p class="small muted">Финансовые данные, файлы и другие сведения клиента не отправляются. Ответ сначала будет показан вам — применится только то, что вы отметите.</p>`,
     [{ t: "Отменить", v: false }, { t: "Отправить БИН", primary: true, v: true }]);
   if (!ok) return;
   let j; toast("Запрашиваю stat.gov.kz…");
-  try { j = await binFetch(bin); } catch (e) { await dialog("Не удалось получить данные", `<p>${esc(e.message)}.</p><p class="small muted">Данные можно заполнить вручную или загрузить отчёт на странице «Благонадёжность».</p>`, [{ t: "Закрыть", primary: true, v: true }]); return; }
+  try { j = await binFetch(bin); } catch (e) {
+    if (e.final) { await dialog("Не найдено", `<p>${esc(e.message)}.</p>`, [{ t: "Закрыть", primary: true, v: true }]); return; }
+    j = await binManual(bin, e.message); if (!j) return;
+  }
   const d = j.data, k = i + 1; ensureTrust(); const t = C.trust[k];
   const okeds = [d.okedCode, ...(d.secondOkeds || [])].map(okedDigits).filter(s => s.length >= 2);
   const okedTxt = okeds.map((c, n) => okedFmt(c) + (n === 0 && d.okedName ? " " + d.okedName : "")).join("; ");
