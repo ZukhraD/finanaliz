@@ -2580,7 +2580,7 @@ function stmtRowsHTML(doc, own, filter, q) {
     if (filter === "ex" && !c) return; if (filter === "inc" && c) return;
     if (q && !low2(`${t.cp} ${t.purp} ${t.knp} ${t.bin}`).includes(q)) return;
     rows.push(`<tr class="${c ? "ex" : ""}"><td class="lab">${esc(t.d.split("-").reverse().join("."))}</td><td style="text-align:left;white-space:normal">${esc(t.cp || "—")}${t.bin ? `<span class="formula">БИН ${esc(t.bin)}</span>` : ""}</td>
-      <td style="text-align:left;white-space:normal">${esc(t.purp || t.op || "—")}${t.knp ? `<span class="formula">КНП ${esc(t.knp)}</span>` : ""}</td><td>${m2(t.cr)}${(t.cur || doc.cur) !== "KZT" ? ` ${esc(t.cur || doc.cur)}` : ""}</td>
+      <td style="text-align:left;white-space:normal">${esc(t.purp || t.op || "—")}${t.knp ? `<span class="formula">КНП ${esc(t.knp)}</span>` : ""}</td><td>${(t.cur || doc.cur) !== "KZT" ? `${K1(t.cr)} тыс. ${esc(t.cur || doc.cur)}${isNum(txKzt(doc, t, t.cr)) ? `<span class="formula">≈ ${K1(txKzt(doc, t, t.cr))} тыс. тг</span>` : `<span class="formula">нет курса</span>`}` : K1(t.cr)}</td>
       <td><select class="inp" data-txcat="${i}"><option value="inc"${!c ? " selected" : ""}>В расчёте</option>${Object.entries(DocParse.CATS).map(([k2, t2]) => `<option value="${k2}"${c === k2 ? " selected" : ""} title="${esc(t2)}">Исключить: ${esc(CAT_SHORT[k2])}</option>`).join("")}</select>${why ? `<span class="formula">${esc(why)}</span>` : ""}</td></tr>`);
   });
   return rows.length ? rows.slice(0, 1500).join("") + (rows.length > 1500 ? `<tr><td colspan="5" class="muted">Показаны первые 1500 операций — уточните поиск.</td></tr>` : "") : `<tr><td colspan="5" class="muted">Нет операций</td></tr>`;
@@ -2606,7 +2606,7 @@ async function stmtEditor(doc, isNew, note) {
     <div id="sSum">${stmtSummary(work, ownOf(work.k))}</div>
     <p class="hint">Поступления, которые не принимаются в расчёт чистых кредитовых оборотов, определены по назначению платежа, коду КНП и отправителю (сама компания — по БИН). Проверьте и при необходимости измените вид операции.</p>
     <div class="grid2 tight" style="margin:6px 0 8px"><label class="f"><span>Показать</span><select class="inp" id="sFilter"><option value="all">все поступления</option><option value="ex">только исключённые</option><option value="inc">только в расчёте</option></select></label><label class="f"><span>Поиск</span><input class="inp" id="sQ" placeholder="контрагент, назначение, КНП"></label></div>
-    <div class="tablewrap" style="max-height:46vh"><table class="data tx"><thead><tr><th class="lab">Дата</th><th style="text-align:left">Отправитель</th><th style="text-align:left">Назначение платежа</th><th>Сумма, как в выписке</th><th style="text-align:left">Вид для расчёта</th></tr></thead><tbody id="sRows">${stmtRowsHTML(work, ownOf(work.k), "all", "")}</tbody></table></div>`;
+    <div class="tablewrap" style="max-height:46vh"><table class="data tx"><thead><tr><th class="lab">Дата</th><th style="text-align:left">Отправитель</th><th style="text-align:left">Назначение платежа</th><th>Сумма, тыс. тг</th><th style="text-align:left">Вид для расчёта</th></tr></thead><tbody id="sRows">${stmtRowsHTML(work, ownOf(work.k), "all", "")}</tbody></table></div>`;
   const redraw = () => { $("#sRows").innerHTML = stmtRowsHTML(work, ownFor(), $("#sFilter").value, low2($("#sQ").value.trim())); $("#sSum").innerHTML = stmtSummary(work, ownFor()); };
   setTimeout(() => {
     const B = $("#dlgB"); $("#dlg").classList.add("wide");
