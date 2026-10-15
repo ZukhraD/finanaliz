@@ -470,7 +470,7 @@ async function importDialog() {
   const rep = await importFiles(files, sel.k, sel.pid, askUnits);
   if (pdfs.length) { await importDocs(pdfs, sel.k); toast("PDF загружены — см. страницы «Налоги» и «Банк»"); }
   COMP_TAB = sel.k; if (!["bal", "odr", "cf"].includes(PAGE)) PAGE = "bal"; render();
-  const lines = rep.map(r => `<div class="logline"><b>${esc(r.file)}</b>${r.sheet ? " / " + esc(r.sheet) : ""}: ${r.err ? stChip("crit", "не загружено") + " " + esc(r.err) : `${stChip("ok", SRC_TXT[r.kind])} ${r.n} строк, ${esc(r.prof)}, ${esc(r.units)}${r.over ? `, перезаписано ${r.over}` : ""}${r.miss.length ? `<br><span class="small muted">В файле нет кодов: ${esc(r.miss.join(", "))}</span>` : ""}`}</div>`).join("");
+  const lines = rep.map(r => `<div class="logline"><b>${esc(r.file)}</b>${r.sheet ? " / " + esc(r.sheet) : ""}: ${r.err ? stChip("crit", "не загружено") + " " + esc(r.err) : `${stChip("ok", SRC_TXT[r.kind])} ${r.n} строк, ${esc(r.prof)}, ${esc(r.units)}${r.over ? `, перезаписано ${r.over}` : ""}${r.miss.length ? `<details class="small muted" style="margin-top:4px"><summary>Строк из шаблона нет в файле: ${r.miss.length} — это нормально, если таких строк в форме нет</summary>Коды: ${esc(r.miss.join(", "))}. Если строка в форме есть, но не загрузилась — проверьте «Настройку загрузки».</details>` : ""}`}</div>`).join("");
   await dialog("Результат загрузки", lines + `<p class="small muted" style="margin-top:10px">Загруженные значения отмечены полосой слева; проверьте их и страницу «Сверки».</p>`, [{ t: "Готово", primary: true, v: true }]);
 }
 

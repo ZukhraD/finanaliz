@@ -936,36 +936,59 @@ function mapCodes(kind) {
 }
 function parseForm(sh, kind) {
   const rows = sh.rows, [R, Cc] = sheetSize(rows);
-  if (R < 5 || Cc < 2) return { err: "мало данных на листе" };
+  if (R < 3 || Cc < 2) return { err: "мало данных на листе" };
   const mc = mapCodes(kind);
-  let codeCol = 0, best = 0, bestSc = 0; const cnts = [];
+  const cnts = [], scs = []; let best = 0;
   for (let c = 1; c <= Cc; c++) {
-    let cnt = 0; const seen = new Set(); let sc = 0;
+    let cnt = 0, sc = 0; const seen = new Set();
     for (let r = 1; r <= R; r++) { const k = normCode(cellAt(rows, r, c)); if (k) { cnt++; if (!seen.has(k)) { seen.add(k); if (mc.has(k)) sc++; } } }
-    cnts[c] = cnt; if (cnt > best) best = cnt; if (sc > bestSc) { bestSc = sc; codeCol = c; }
+    cnts[c] = cnt; scs[c] = sc; if (cnt > best) best = cnt;
   }
-  if (best < 5) return { err: "не найдена колонка кодов строк" };
-  if (bestSc < 3) { codeCol = 0; for (let c = 1; c <= Cc; c++) if (cnts[c] >= best * 0.6) { codeCol = c; break; } }
-  const label = r => { const t = normTxt((rows[r] || []).slice(1, codeCol).filter(x => typeof x === "string").join(" ")); return /[a-zа-я]/.test(t) ? t : ""; };
-  const codes = new Map(), unc = [];
-  let first = 0;
+  if (best < 3) return { err: "не найдена колонка кодов строк" };
+  // колонок с кодами может быть несколько: в печатных формах 1С после разрыва страницы таблица сдвигается
+  let codeCols = []; for (let c = 1; c <= Cc; c++) if (scs[c] >= 3) codeCols.push(c);
+  if (!codeCols.length) for (let c = 1; c <= Cc; c++) if (cnts[c] >= best * 0.6) { codeCols.push(c); break; }
+  const isLab = x => typeof x === "string" && /[a-zа-яё]/i.test(x) && !normCode(x);
+  const labelOf = (r, c) => { const row = rows[r] || []; let t = normTxt(row.slice(1, c).filter(isLab).join(" ")); if (!/[a-zа-я]/.test(t)) t = normTxt(row.slice(c + 1).filter(isLab).join(" ")); return /[a-zа-я]/.test(t) ? t : ""; };
+  const rowCol = new Map();
+  for (let r = 1; r <= R; r++) for (const c of codeCols) { const k = normCode(cellAt(rows, r, c)); if (k) { rowCol.set(r, { k, c }); break; } }
+  // колонки сумм — для каждой колонки кодов свои
+  const skip = kwList(S.kw.skipcol), vmap = new Map();
+  for (const cc of codeCols) {
+    const rs = [...rowCol.entries()].filter(([, o]) => o.c === cc).map(([r]) => r); if (!rs.length) continue;
+    const first = rs[0], vc = [];
+    for (let c = cc + 1; c <= Cc && vc.length < 2; c++) {
+      const hdr = normTxt([1, 2, 3, 4].map(d => cellAt(rows, first - d, c)).filter(x => typeof x === "string").join(" "));
+      if (skip.some(t => hdr.includes(t))) continue;
+      let n = 0; for (const r of rs) if (parseNum(cellAt(rows, r, c)) !== null) n++;
+      if (n >= Math.min(2, rs.length)) vc.push(c);
+    }
+    vmap.set(cc, vc);
+  }
+  // значение строки: из колонки сумм; если там пусто (сдвиг объединённых ячеек) — n-е число правее кода
+  const valAt = (r, cc, w) => {
+    const vc = vmap.get(cc) || [], v = vc[w] ? parseNum(cellAt(rows, r, vc[w])) : null;
+    if (v !== null) return v;
+    if (vc[w] && cellAt(rows, r, vc[w]) !== undefined) return null;
+    const nums = []; for (let c = cc + 1; c <= Cc; c++) { const x = cellAt(rows, r, c); if (typeof x === "number" || (typeof x === "string" && parseNum(x) !== null && /\d/.test(x))) nums.push(parseNum(x)); }
+    return nums[w] ?? null;
+  };
+  const codes = new Map(), unc = []; let first = 0, lastCol = codeCols[0];
   for (let r = 1; r <= R; r++) {
-    const k = normCode(cellAt(rows, r, codeCol)), lab = label(r);
-    if (k && lab) { if (!first) first = r; if (!codes.has(k)) codes.set(k, { r, lab }); }
-    else if (!k && lab && first && cellAt(rows, r, codeCol) === undefined) unc.push({ r, lab });
+    const o = rowCol.get(r);
+    if (o) { const lab = labelOf(r, o.c); lastCol = o.c; if (!first) first = r; if (!codes.has(o.k)) { const cc = o.c; codes.set(o.k, { r, lab, val: w => valAt(r, cc, w) }); } }
+    else if (first) { const lab = labelOf(r, Cc + 1), cc = lastCol; if (lab && cellAt(rows, r, cc) === undefined) unc.push({ r, lab, val: w => valAt(r, cc, w) }); }
   }
-  if (codes.size < 5) return { err: "не найдена колонка кодов строк" };
-  const skip = kwList(S.kw.skipcol);
-  const vcols = [];
-  for (let c = codeCol + 1; c <= Cc && vcols.length < 2; c++) {
-    const hdr = normTxt([1, 2, 3, 4].map(d => cellAt(rows, first - d, c)).filter(x => typeof x === "string").join(" "));
-    if (skip.some(s => hdr.includes(s))) continue;
-    let n = 0; for (const { r } of codes.values()) if (parseNum(cellAt(rows, r, c)) !== null) n++;
-    if (n >= 2) vcols.push(c);
-  }
-  if (!vcols.length) return { err: "правее кодов нет колонок с суммами" };
-  const get = (r, w) => (vcols[w] ? parseNum(cellAt(rows, r, vcols[w])) : null);
-  return { codes, unc, get, hasPrev: vcols.length > 1, max: Math.max(0, ...Array.from(codes.values()).map(({ r }) => Math.abs(get(r, 0) || 0))) };
+  if (codes.size < 3) return { err: "не найдена колонка кодов строк" };
+  if (![...vmap.values()].some(v => v.length)) return { err: "правее кодов нет колонок с суммами" };
+  const hasPrev = [...vmap.values()].some(v => v.length > 1);
+  return { codes, unc, hasPrev, max: Math.max(0, ...Array.from(codes.values()).map(c => Math.abs(c.val(0) || 0))) };
+}
+// одна форма на нескольких листах (страницах) — объединяем
+function mergeForms(a, b) {
+  for (const [k, v] of b.codes) if (!a.codes.has(k)) a.codes.set(k, v);
+  a.unc.push(...b.unc); a.hasPrev = a.hasPrev || b.hasPrev; a.max = Math.max(a.max, b.max);
+  return a;
 }
 function chooseProfile(f, kind) {
   if (C.settings.variant >= 1) return C.settings.variant;
@@ -982,8 +1005,8 @@ function evalSpec(spec, f, w) {
     t = t.trim(); if (!t) continue;
     let op = ""; if ("*-~+!".includes(t[0])) { op = t[0]; t = t.slice(1).trim(); }
     let v = null;
-    if (t[0] === "#") { const u = f.unc.find(x => x.lab.includes(normTxt(t.slice(1)))); if (!u) continue; v = f.get(u.r, w) ?? 0; }
-    else { const c = f.codes.get(normCode(t)); if (!c) { missing.push(t); continue; } found = true; v = f.get(c.r, w) ?? 0; }
+    if (t[0] === "#") { const u = f.unc.find(x => x.lab.includes(normTxt(t.slice(1)))); if (!u) continue; v = u.val(w) ?? 0; }
+    else { const c = f.codes.get(normCode(t)); if (!c) { missing.push(t); continue; } found = true; v = c.val(w) ?? 0; }
     s += op === "*" ? Math.abs(v) : op === "-" ? -Math.abs(v) : op === "!" ? -v : op === "~" ? -v : v;
   }
   return { v: s, found, missing };
@@ -998,11 +1021,18 @@ async function importFiles(files, k, pid, askUnits) {
     let sheets;
     try { sheets = await readWorkbook(await file.arrayBuffer()); } catch (e) { report.push({ file: file.name, err: "не удалось прочитать: " + e.message }); continue; }
     const parsed = [];
+    let lastKind = null;
     for (const sh of sheets) {
       if (sh.hidden && sheets.length > 1) continue;
-      const kind = detectKind(sh);
-      if (!kind || kind === "X" || parsed.some(p => p.kind === kind)) continue;
+      let kind = detectKind(sh);
+      if (kind === "X") { lastKind = null; continue; }
+      // лист без заголовка сразу после формы — её продолжение (вторая страница)
+      if (!kind && lastKind) { const mc = mapCodes(lastKind); let n = 0; for (const row of sh.rows) if (row) for (const v of row) if (mc.has(normCode(v))) n++; if (n >= 3) kind = lastKind; }
+      if (!kind) continue;
+      lastKind = kind;
       const f = parseForm(sh, kind);
+      const same = parsed.find(p => p.kind === kind);
+      if (same) { if (!f.err) { mergeForms(same.f, f); same.sheet += ", " + sh.name; } continue; }
       if (f.err) { report.push({ file: file.name, sheet: sh.name, err: f.err }); continue; }
       parsed.push({ kind, f, sheet: sh.name });
     }
@@ -4057,7 +4087,7 @@ async function importDialog() {
   const rep = await importFiles(files, sel.k, sel.pid, askUnits);
   if (pdfs.length) { await importDocs(pdfs, sel.k); toast("PDF загружены — см. страницы «Налоги» и «Банк»"); }
   COMP_TAB = sel.k; if (!["bal", "odr", "cf"].includes(PAGE)) PAGE = "bal"; render();
-  const lines = rep.map(r => `<div class="logline"><b>${esc(r.file)}</b>${r.sheet ? " / " + esc(r.sheet) : ""}: ${r.err ? stChip("crit", "не загружено") + " " + esc(r.err) : `${stChip("ok", SRC_TXT[r.kind])} ${r.n} строк, ${esc(r.prof)}, ${esc(r.units)}${r.over ? `, перезаписано ${r.over}` : ""}${r.miss.length ? `<br><span class="small muted">В файле нет кодов: ${esc(r.miss.join(", "))}</span>` : ""}`}</div>`).join("");
+  const lines = rep.map(r => `<div class="logline"><b>${esc(r.file)}</b>${r.sheet ? " / " + esc(r.sheet) : ""}: ${r.err ? stChip("crit", "не загружено") + " " + esc(r.err) : `${stChip("ok", SRC_TXT[r.kind])} ${r.n} строк, ${esc(r.prof)}, ${esc(r.units)}${r.over ? `, перезаписано ${r.over}` : ""}${r.miss.length ? `<details class="small muted" style="margin-top:4px"><summary>Строк из шаблона нет в файле: ${r.miss.length} — это нормально, если таких строк в форме нет</summary>Коды: ${esc(r.miss.join(", "))}. Если строка в форме есть, но не загрузилась — проверьте «Настройку загрузки».</details>` : ""}`}</div>`).join("");
   await dialog("Результат загрузки", lines + `<p class="small muted" style="margin-top:10px">Загруженные значения отмечены полосой слева; проверьте их и страницу «Сверки».</p>`, [{ t: "Готово", primary: true, v: true }]);
 }
 
