@@ -87,7 +87,7 @@ function pageTrust() {
   ensureTrust();
   const k = COMP_TAB > nComp() ? 1 : COMP_TAB, s = trustSummary(k), t = s.t;
   const opt = (id, cur) => `<select class="inp tst ${cur}" data-trust="${id}">${Object.entries(TST).map(([v, l]) => `<option value="${v}"${cur === v ? " selected" : ""}>${l}</option>`).join("")}</select>`;
-  return `<div class="pagehead"><div class="lead"><h1>Благонадёжность</h1><p>Проверка компании по официальным реестрам и сервисам проверки контрагентов. Загрузите отчёт из «Параграфа» (PRG.Tekser) или аналогичного сервиса в PDF, HTML или Excel — сайт найдёт в нём факторы риска и предложит отметки. Отчёт читается в этом браузере и никуда не отправляется. Кнопка «Подтянуть по БИН» запрашивает только регистрационные данные в stat.gov.kz — наружу уходит один БИН.</p></div>
+  return `<div class="pagehead"><div class="lead"><h1>Благонадёжность</h1><p>Проверка компании по официальным реестрам и сервисам проверки контрагентов. Загрузите отчёт из «Параграфа» (PRG.Tekser) или аналогичного сервиса в PDF, HTML или Excel — сайт найдёт в нём факторы риска и предложит отметки. Отчёт читается в этом браузере и никуда не отправляется. Кнопка «Подтянуть по БИН» разбирает текст, скопированный со страницы stat.gov.kz.</p></div>
     <div class="toolbar"><button class="btn" data-binlookup="${k - 1}">Подтянуть по БИН</button><button class="btn primary" data-act="trustdlg">Загрузить отчёт</button></div></div>
   ${compTabs()}<div id="probBanner" data-page="trust">${bannerHTML("trust")}</div>
   <section class="panel"><h2>${esc(compName(k))}</h2>
@@ -162,8 +162,9 @@ function binDate(s) {
   if ((m = /^(\d{2})[.\/](\d{2})[.\/](\d{4})/.exec(s))) return `${m[1]}.${m[2]}.${m[3]}`;
   return s;
 }
-const BIN_URLS = b => [`https://stat.gov.kz/api/juridical/counter/api/?bin=${b}&lang=ru`, `https://old.stat.gov.kz/api/juridical/counter/api/?bin=${b}&lang=ru`];
-const BIN_SRC = "Бюро национальной статистики (stat.gov.kz)";
+/* ---------- «Подтянуть по БИН»: без сетевых запросов.
+   Пользователь находит компанию на stat.gov.kz (или egov, «Параграф»), копирует текст результата, сайт его разбирает здесь. */
+const BIN_PAGE = "https://stat.gov.kz/ru/cabinet/juridical/by/bin/";
 function binNorm(j) {
   const o = j && (j.obj || j.data || j.result || j);
   if (!o || typeof o !== "object") return null;
@@ -174,57 +175,54 @@ function binNorm(j) {
     secondOkeds: String(sec || "").split(/[,;\s]+/).filter(Boolean), krp: pk("krpName"), kse: pk("kseName"), kfs: pk("kfsName"),
     address: pk("katoAddress", "address", "legalAddress"), director: pk("fio", "director", "head"), ip: o.ip === true || o.ip === "true" };
 }
-async function binFetch(bin) {
-  if (location.protocol === "file:") throw new Error("автоматический запрос работает только на сайте (finanaliz…vercel.app)");
-  const errs = [];
-  // 1) напрямую из браузера пользователя (запрос идёт с казахстанского адреса пользователя)
-  for (const url of BIN_URLS(bin)) {
-    try {
-      const r = await fetch(url, { headers: { accept: "application/json" }, cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer", mode: "cors" });
-      if (!r.ok) { errs.push("stat.gov.kz ответил " + r.status); continue; }
-      const j = await r.json();
-      if (j && j.success === false) throw Object.assign(new Error("компания с таким БИН не найдена в Бюро национальной статистики"), { final: true });
-      const d = binNorm(j); if (d) return { source: BIN_SRC, data: d };
-      errs.push("непонятный ответ stat.gov.kz");
-    } catch (e) { if (e.final) throw e; errs.push("браузер не получил ответ stat.gov.kz напрямую"); }
+const BIN_LABELS = [
+  ["bin", /^(бин|иин|бин\s*\/\s*иин)(?![а-яё])/i],
+  ["name", /^(полное\s+|краткое\s+)?(наименование|название)(?!\s+(крп|кфс|ксэ|кэд|окэд|вида|сектор|населен|района|области|банка))(\s+(юридического\s+лица|организации|на\s+русском\s+языке|компании))?/i],
+  ["regDate", /^дата\s+(первичной\s+|государственной\s+)?(гос\.?\s*)?регистрации/i],
+  ["second", /^(вторичн\S*|дополнительн\S*)\s+(код\S*\s+)?(окэд|вид\S*)/i],
+  ["oked", /^((основн\S*|первичн\S*)\s+)?(код\s+)?окэд|^(основной\s+)?вид\s+(экономической\s+)?деятельност/i],
+  ["director", /^(фио\s+)?(первого\s+)?руководител|^(фамилия.{0,30}руководител)|^директор(?![а-яё])/i],
+  ["address", /^(юридический\s+адрес|адрес(\s+местонахождения)?|местонахождени|место\s+нахождения)/i],
+  ["krp", /^(наименование\s+)?крп|^размерност/i],
+  ["kfs", /^(наименование\s+)?кфс|^форма\s+собственност/i],
+];
+function binParseText(txt) {
+  const t = String(txt || "").trim(); if (!t) return null;
+  if (t.includes("{")) { try { const d = binNorm(JSON.parse(t.slice(t.indexOf("{"), t.lastIndexOf("}") + 1))); if (d) return d; } catch (e) { /* дальше как текст */ } }
+  const L = t.split(/\r?\n/).map(x => x.replace(/ /g, " ").replace(/[ ]{2,}/g, " ").trim()).filter(Boolean);
+  const lab = s => BIN_LABELS.find(([, re]) => re.test(s));
+  const out = {};
+  for (let i = 0; i < L.length; i++) {
+    const hit = lab(L[i]); if (!hit) continue;
+    const [id, re] = hit; if (out[id]) continue;
+    let v = L[i].replace(re, "").replace(/^[а-яёА-ЯЁ]*/u, "").replace(/^[^\wа-яёА-ЯЁ«"(]*/u, "").replace(/^(компании|организации)\s*[:\-–]?\s*/i, "").trim();
+    if (!v && L[i + 1] && !lab(L[i + 1])) v = L[i + 1];
+    if (v) out[id] = v;
   }
-  // 2) через сервер сайта
-  try {
-    const r = await fetch("/api/bin?bin=" + encodeURIComponent(bin), { headers: { accept: "application/json" }, cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer" });
-    let j = null; try { j = await r.json(); } catch (e) { /* ниже */ }
-    if (j && j.ok) return j;
-    if (r.status === 404 && j) throw Object.assign(new Error(j.error), { final: true });
-    errs.push("сервер сайта: " + (j?.error || "ответ " + r.status));
-  } catch (e) { if (e.final) throw e; errs.push("сервер сайта недоступен"); }
-  throw new Error([...new Set(errs)].join("; "));
-}
-async function binManual(bin, why) {
-  const links = BIN_URLS(bin).map((u, n) => `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${n ? "запасная ссылка" : "Открыть ответ stat.gov.kz"}</a>`).join(" · ");
-  const body = `<p>Автоматически получить данные не удалось: ${esc(why)}.</p>
-    <p><b>Можно вручную, это минута:</b></p>
-    <ol><li>Нажмите ${links} — откроется новая вкладка с текстом в фигурных скобках.</li>
-    <li>Выделите всё (Ctrl+A), скопируйте (Ctrl+C) и вставьте сюда (Ctrl+V).</li></ol>
-    <textarea class="inp" id="binPaste" rows="6" style="width:100%;font-family:monospace;font-size:12px" placeholder='{"success":true,"obj":{"bin":"…","name":"…"}}'></textarea>`;
-  const txt = await dialog("Данные по БИН вручную", body, [{ t: "Отменить", v: null }, { t: "Разобрать", primary: true, v: d => d.querySelector("#binPaste").value }]);
-  if (!txt || !txt.trim()) return null;
-  let j; try { const m = txt.indexOf("{"); j = JSON.parse(txt.slice(m, txt.lastIndexOf("}") + 1)); } catch (e) { toast("Не получилось разобрать текст — скопируйте всю страницу ответа"); return null; }
-  if (j && j.success === false) { toast("stat.gov.kz: компания с таким БИН не найдена"); return null; }
-  const d = binNorm(j); if (!d) { toast("В тексте нет наименования компании"); return null; }
-  return { source: BIN_SRC, data: d };
+  const date = s => { const m = /(\d{2})[.\/](\d{2})[.\/](\d{4})|(\d{4})-(\d{2})-(\d{2})/.exec(s || ""); return m ? (m[1] ? `${m[1]}.${m[2]}.${m[3]}` : `${m[6]}.${m[5]}.${m[4]}`) : ""; };
+  const codes = s => (String(s || "").match(/\b\d{2}\.?\d{2}\.?\d?\b|\b\d{5}\b/g) || []).map(okedDigits).filter(c => c.length >= 4);
+  const ok = codes(out.oked), binM = /\b(\d{12})\b/.exec(out.bin || t);
+  const d = { bin: binM ? binM[1] : "", name: out.name || "", regDate: date(out.regDate), okedCode: ok[0] || "", okedName: (out.oked || "").replace(/^[\d.\s\-–:]+/, "").trim(), secondOkeds: codes(out.second),
+    krp: out.krp || "", kse: "", kfs: out.kfs || "", address: out.address || "", director: out.director || "", ip: /индивидуальн\S*\s+предприниматель/i.test(t) && !/тоо|товариществ|акционерн/i.test(t.slice(0, 300)) };
+  return d.name || d.regDate || d.okedCode || d.director ? d : null;
 }
 async function binLookup(i) {
   const x = C.companies[i]; if (!x) return;
   const bin = String(x.bin || (i === 0 ? C.card.bin : "") || "").replace(/\D/g, "");
   if (!/^\d{12}$/.test(bin)) { toast("Сначала укажите БИН/ИИН из 12 цифр"); return; }
-  const ok = await dialog("Подтянуть данные по БИН", `<p>Сайт отправит <b>только БИН ${esc(bin)}</b> в Бюро национальной статистики (stat.gov.kz) — из вашего браузера, а если не выйдет, через сервер сайта — и получит открытые регистрационные данные: наименование, дату регистрации, ОКЭД, руководителя, адрес.</p>
-    <p class="small muted">Финансовые данные, файлы и другие сведения клиента не отправляются. Ответ сначала будет показан вам — применится только то, что вы отметите.</p>`,
-    [{ t: "Отменить", v: false }, { t: "Отправить БИН", primary: true, v: true }]);
-  if (!ok) return;
-  let j; toast("Запрашиваю stat.gov.kz…");
-  try { j = await binFetch(bin); } catch (e) {
-    if (e.final) { await dialog("Не найдено", `<p>${esc(e.message)}.</p>`, [{ t: "Закрыть", primary: true, v: true }]); return; }
-    j = await binManual(bin, e.message); if (!j) return;
-  }
+  const body = `<ol style="margin:0 0 10px 18px;padding:0">
+      <li>Откройте <a href="${BIN_PAGE}" target="_blank" rel="noopener noreferrer">поиск юрлиц на stat.gov.kz</a> (новая вкладка) и найдите компанию по БИН <b>${esc(bin)}</b> <button class="btn ghost" type="button" id="binCopy" style="padding:2px 8px">скопировать БИН</button></li>
+      <li>На странице с результатом выделите всё (Ctrl+A) и скопируйте (Ctrl+C).</li>
+      <li>Вставьте сюда (Ctrl+V) и нажмите «Разобрать».</li></ol>
+    <textarea class="inp" id="binPaste" rows="9" style="width:100%;font-size:12px" placeholder="Сюда вставьте текст со страницы результата: наименование, дата регистрации, ОКЭД, руководитель, адрес…"></textarea>
+    <p class="small muted" style="margin-top:6px">Подойдёт текст и с других открытых источников (egov, «Параграф»). Сайт сам никуда не обращается — текст разбирается в этом браузере.</p>`;
+  setTimeout(() => { const b = $("#binCopy"); if (b) b.onclick = async () => { try { await navigator.clipboard.writeText(bin); toast("БИН скопирован"); } catch (e) { toast("Не удалось скопировать — выделите БИН вручную"); } }; });
+  const txt = await dialog("Регистрационные данные по БИН", body, [{ t: "Отменить", v: null }, { t: "Разобрать", primary: true, v: d => d.querySelector("#binPaste").value }]);
+  if (!txt || !txt.trim()) { if (txt !== null && txt !== undefined) toast("Текст не вставлен"); return; }
+  const pd = binParseText(txt);
+  if (!pd) { await dialog("Не удалось разобрать", `<p>В тексте не нашлось наименования, даты регистрации, ОКЭД или руководителя.</p><p class="small muted">Скопируйте всю страницу с результатом поиска (Ctrl+A, Ctrl+C) или заполните поля в карточке и на странице «Благонадёжность» вручную.</p>`, [{ t: "Закрыть", primary: true, v: true }]); return; }
+  if (pd.bin && pd.bin !== bin && !await dialog("БИН не совпадает", `<p>В тексте БИН <b>${esc(pd.bin)}</b>, а у компании в карточке — <b>${esc(bin)}</b>. Всё равно показать данные?</p>`, [{ t: "Отменить", v: false }, { t: "Показать", primary: true, v: true }])) return;
+  const j = { source: "текст из открытого источника (stat.gov.kz)", data: pd };
   const d = j.data, k = i + 1; ensureTrust(); const t = C.trust[k];
   const okeds = [d.okedCode, ...(d.secondOkeds || [])].map(okedDigits).filter(s => s.length >= 2);
   const okedTxt = okeds.map((c, n) => okedFmt(c) + (n === 0 && d.okedName ? " " + d.okedName : "")).join("; ");
@@ -237,13 +235,13 @@ async function binLookup(i) {
     ...(i === 0 ? [["oked", "ОКЭД (основной и дополнительные)", okedListText(C), okedTxt]] : []),
   ].filter(r => r[3]);
   const extra = [d.krp && "размерность: " + d.krp, d.kfs && "форма собственности: " + d.kfs, d.kse && "сектор: " + d.kse].filter(Boolean);
-  const body = `<p class="small muted">${esc(j.source)} · БИН ${esc(d.bin || bin)}${d.ip ? " · индивидуальный предприниматель" : ""}</p>
-    <div class="tablewrap" style="max-height:52vh;margin-top:8px"><table class="data trust"><thead><tr><th class="lab">Поле</th><th style="text-align:left">Сейчас в карточке</th><th style="text-align:left">По данным stat.gov.kz</th><th>Применить</th></tr></thead><tbody>
+  const pbody = `<p class="small muted">${esc(j.source)} · БИН ${esc(d.bin || bin)}${d.ip ? " · индивидуальный предприниматель" : ""}</p>
+    <div class="tablewrap" style="max-height:52vh;margin-top:8px"><table class="data trust"><thead><tr><th class="lab">Поле</th><th style="text-align:left">Сейчас в карточке</th><th style="text-align:left">Из вставленного текста</th><th>Применить</th></tr></thead><tbody>
     ${rows.map(([id, lab, cur, nw]) => `<tr><td class="lab">${esc(lab)}</td><td style="text-align:left;white-space:normal" class="small">${esc(cur || "—")}</td><td style="text-align:left;white-space:normal">${esc(nw)}</td><td><input type="checkbox" data-bapply="${id}" ${!cur || id === "regDate" || id === "director" ? "checked" : ""}></td></tr>`).join("")}
     </tbody></table></div>${extra.length ? `<p class="small muted" style="margin-top:8px">${esc(extra.join(" · "))}</p>` : ""}
     <p class="hint">Статус (действующее, ликвидация), долги и включение в реестры КГД этот источник не показывает — их проверяйте по отчёту на странице «Благонадёжность».</p>`;
   setTimeout(() => $("#dlg").classList.add("wide"));
-  const ids = await dialog("Данные по БИН: проверьте и примените", body, [{ t: "Отменить", v: null }, { t: "Применить", primary: true, v: dd => [...dd.querySelectorAll("[data-bapply]")].filter(c => c.checked).map(c => c.dataset.bapply) }]);
+  const ids = await dialog("Данные по БИН: проверьте и примените", pbody, [{ t: "Отменить", v: null }, { t: "Применить", primary: true, v: dd => [...dd.querySelectorAll("[data-bapply]")].filter(c => c.checked).map(c => c.dataset.bapply) }]);
   $("#dlg")?.classList.remove("wide");
   if (!ids || !ids.length) return;
   if (ids.includes("name")) { x.name = d.name; if (i === 0 && !C.card.name) C.card.name = d.name; }
@@ -252,7 +250,7 @@ async function binLookup(i) {
   if (ids.includes("address")) t.address = d.address;
   if (ids.includes("oked")) C.card.oked = okeds.slice(0, MAX_OKED).map((c, n) => ({ code: okedFmt(c), name: (n === 0 && d.okedName) || okedLookup(c)?.name || "" }));
   t.reg = { source: j.source, date: isoToday() };
-  C.log.unshift({ t: new Date().toISOString(), file: "stat.gov.kz", comp: compName(k), per: "", kind: "БИН", note: "по БИН применено: " + ids.length + " полей" });
+  C.log.unshift({ t: new Date().toISOString(), file: "текст stat.gov.kz", comp: compName(k), per: "", kind: "БИН", note: "по БИН применено: " + ids.length + " полей" });
   touch(); render(); toast("Данные по БИН применены");
 }
 document.addEventListener("click", e => {
