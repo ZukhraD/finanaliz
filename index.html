@@ -2166,6 +2166,8 @@ const ymLabel = ym => { const [y, m] = ym.split("-"); return `${MON_RU[+m - 1]} 
 const partMonths = p => (p === "Y" ? [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] : p[0] === "H" ? [1, 2, 3, 4, 5, 6].map(m => m + (+p[1] - 1) * 6) : [1, 2, 3].map(m => m + (+p[1] - 1) * 3));
 const vatRate = y => (y >= 2026 ? 0.16 : 0.12);
 const m2 = v => (isNum(v) ? nf2.format(v) : "");
+const K1 = v => (isNum(v) ? nf1.format(v / 1000) : "");          // тенге → тыс. тг для показа и правки
+const fromK = s => { const v = parseNum(s); return v === null ? null : Math.round(v * 1000 * 100) / 100; };
 const pctFmt = v => (isNum(v) ? nf1.format(v * 100) + " %" : "");
 function ensureDocs(c = C) { if (!c) return; c.decl = c.decl || []; c.bank = c.bank || []; c.dset = c.dset || { pct: 0.02, bpct: 0.1 }; c.fx = c.fx || {}; for (const b of c.bank) b.kind = b.kind || "turn"; }
 function perMonths(p) {
@@ -2411,8 +2413,8 @@ function pageTax() {
     <div class="grid2 tight" style="margin-top:12px;max-width:320px"><label class="f"><span>Допуск расхождений, %</span><input class="inp num" data-dset="pct" value="${esc(fmt(N(C.dset.pct) * 100, "m1"))}"></label></div></section>`;
   const ks = Object.keys(DocParse.KEYS).filter(key => decl.some(d => d.vals && isNum(d.vals[key])));
   const sorted = decl.slice().sort((a, b) => (a.year - b.year) || String(a.part).localeCompare(String(b.part)) || String(a.form).localeCompare(String(b.form)));
-  h += `<section class="panel"><h2>Декларации (${decl.length})</h2><p class="hint">Суммы — в тенге, как в декларациях.</p><div class="tablewrap" style="max-height:none"><table class="data"><thead><tr><th class="lab">Форма</th><th>Период</th>${ks.map(key => `<th>${esc(DocParse.KEYS[key].t)}</th>`).join("")}<th></th></tr></thead><tbody>
-    ${sorted.map(d => `<tr><td class="lab">${esc(d.formName || d.form)}<span class="formula">${esc(d.file || "введена вручную")}</span></td><td>${esc((d.year || "год?") + ", " + (PARTS[d.part] || d.part))}</td>${ks.map(key => `<td>${d.vals && isNum(d.vals[key]) ? fmt(d.vals[key]) : ""}</td>`).join("")}
+  h += `<section class="panel"><h2>Декларации (${decl.length})</h2><p class="hint">Тыс. тг — суммы из деклараций переведены из тенге автоматически.</p><div class="tablewrap" style="max-height:none"><table class="data"><thead><tr><th class="lab">Форма</th><th>Период</th>${ks.map(key => `<th>${esc(DocParse.KEYS[key].t)}</th>`).join("")}<th></th></tr></thead><tbody>
+    ${sorted.map(d => `<tr><td class="lab">${esc(d.formName || d.form)}<span class="formula">${esc(d.file || "введена вручную")}</span></td><td>${esc((d.year || "год?") + ", " + (PARTS[d.part] || d.part))}</td>${ks.map(key => `<td>${d.vals && isNum(d.vals[key]) ? fmt(d.vals[key] / 1000) : ""}</td>`).join("")}
       <td style="white-space:nowrap"><button class="btn ghost" data-decledit="${d.id}">Открыть</button><button class="btn ghost danger" data-decldel="${d.id}" title="Удалить" aria-label="Удалить">×</button></td></tr>`).join("")}
     </tbody></table></div></section>`;
   return h;
@@ -2442,15 +2444,15 @@ function pageBank() {
   }
   // документы
   const own = ownOf(k);
-  h += `<section class="panel"><h2>Документы (${bank.length})</h2><div class="tablewrap" style="max-height:none"><table class="data"><thead><tr><th class="lab">Банк, счёт</th><th>Вид</th><th>Период</th><th>Кредит</th><th>Исключено</th><th>Чистые</th><th></th></tr></thead><tbody>
+  h += `<section class="panel"><h2>Документы (${bank.length})</h2><p class="hint">Тыс. тг (по валютным счетам — тыс. единиц валюты счёта).</p><div class="tablewrap" style="max-height:none"><table class="data"><thead><tr><th class="lab">Банк, счёт</th><th>Вид</th><th>Период</th><th>Кредит</th><th>Исключено</th><th>Чистые</th><th></th></tr></thead><tbody>
     ${bank.map(b => {
       let cr = 0, ex = 0, per;
       if (b.kind === "stmt") { (b.txs || []).forEach((t, i) => { if (!t.cr) return; cr += t.cr; if (txCat(b, i, t, own)[0]) ex += t.cr; }); per = `${b.from || b.txs?.[0]?.d || "?"} – ${b.to || b.txs?.[b.txs.length - 1]?.d || "?"}`; }
       else { const v = Object.values(b.months || {}); cr = b.rangeOnly ? N(b.total?.cr) : v.reduce((a, o) => a + N(o.cr), 0); per = b.rangeOnly ? `${b.from} – ${b.to}` : `${Object.keys(b.months || {}).length} мес.`; }
       return `<tr><td class="lab">${esc(b.bank || "банк не указан")}<span class="formula">${esc(b.acc || "счёт не указан")} · ${esc(b.cur)}${b.cur !== "KZT" && b.kind !== "stmt" && isNum(b.rate) ? " по " + fmt(b.rate, "m1") : ""} · ${esc(b.file || "введено вручную")}</span></td><td>${b.kind === "stmt" ? `выписка<span class="formula">${(b.txs || []).length} оп.</span>` : "справка"}</td><td>${esc(per)}</td>
-        <td>${fmt(cr)}</td><td>${b.kind === "stmt" ? fmt(ex) : "—"}</td><td>${b.kind === "stmt" ? fmt(cr - ex) : fmt(cr)}</td>
+        <td>${fmt(cr / 1000)}</td><td>${b.kind === "stmt" ? fmt(ex / 1000) : "—"}</td><td>${fmt((b.kind === "stmt" ? cr - ex : cr) / 1000)}</td>
         <td style="white-space:nowrap"><button class="btn ghost" data-bankedit="${b.id}">${b.kind === "stmt" ? "Операции" : "Открыть"}</button><button class="btn ghost danger" data-bankdel="${b.id}" title="Удалить" aria-label="Удалить">×</button></td></tr>`;
-    }).join("")}</tbody></table></div><p class="hint" style="margin-top:8px">Суммы в документах — в валюте счёта, в тенге/единицах как в выписке.</p></section>`;
+    }).join("")}</tbody></table></div></section>`;
   h += fxPanel(k);
   return h;
 }
@@ -2587,8 +2589,8 @@ const low2 = s => String(s || "").toLowerCase().replace(/ё/g, "е");
 function stmtSummary(doc, own) {
   let cr = 0, db = 0, ex = 0, n = 0; const by = {};
   (doc.txs || []).forEach((t, i) => { db += t.db; if (!t.cr) return; n++; cr += t.cr; const [c] = txCat(doc, i, t, own); if (c) { ex += t.cr; by[c] = (by[c] || 0) + t.cr; } });
-  return `<table class="data sumt"><thead><tr><th class="lab">Поступлений</th><th>Кредит всего, ${esc(doc.cur)}</th><th>Исключено</th><th>Чистые кредитовые обороты</th><th>Дебет всего</th></tr></thead><tbody><tr><td class="lab">${n}</td><td>${m2(cr)}</td><td>${m2(ex)}</td><td class="strong">${m2(cr - ex)}</td><td>${m2(db)}</td></tr></tbody></table>
-    <p class="small muted" style="margin:4px 0 0">${Object.entries(by).map(([c, v]) => `${CAT_SHORT[c]}: ${m2(v)}`).join(" · ") || "Исключений нет"}</p>`;
+  return `<table class="data sumt"><thead><tr><th class="lab">Поступлений</th><th>Кредит всего, тыс. ${esc(doc.cur === "KZT" ? "тг" : doc.cur)}</th><th>Исключено</th><th>Чистые кредитовые обороты</th><th>Дебет всего</th></tr></thead><tbody><tr><td class="lab">${n}</td><td>${K1(cr)}</td><td>${K1(ex)}</td><td class="strong">${K1(cr - ex)}</td><td>${K1(db)}</td></tr></tbody></table>
+    <p class="small muted" style="margin:4px 0 0">${Object.entries(by).map(([c, v]) => `${CAT_SHORT[c]}: ${K1(v)}`).join(" · ") || "Исключений нет"}</p>`;
 }
 async function stmtEditor(doc, isNew, note) {
   ensureDocs();
@@ -2604,7 +2606,7 @@ async function stmtEditor(doc, isNew, note) {
     <div id="sSum">${stmtSummary(work, ownOf(work.k))}</div>
     <p class="hint">Поступления, которые не принимаются в расчёт чистых кредитовых оборотов, определены по назначению платежа, коду КНП и отправителю (сама компания — по БИН). Проверьте и при необходимости измените вид операции.</p>
     <div class="grid2 tight" style="margin:6px 0 8px"><label class="f"><span>Показать</span><select class="inp" id="sFilter"><option value="all">все поступления</option><option value="ex">только исключённые</option><option value="inc">только в расчёте</option></select></label><label class="f"><span>Поиск</span><input class="inp" id="sQ" placeholder="контрагент, назначение, КНП"></label></div>
-    <div class="tablewrap" style="max-height:46vh"><table class="data tx"><thead><tr><th class="lab">Дата</th><th style="text-align:left">Отправитель</th><th style="text-align:left">Назначение платежа</th><th>Сумма</th><th style="text-align:left">Вид для расчёта</th></tr></thead><tbody id="sRows">${stmtRowsHTML(work, ownOf(work.k), "all", "")}</tbody></table></div>`;
+    <div class="tablewrap" style="max-height:46vh"><table class="data tx"><thead><tr><th class="lab">Дата</th><th style="text-align:left">Отправитель</th><th style="text-align:left">Назначение платежа</th><th>Сумма, как в выписке</th><th style="text-align:left">Вид для расчёта</th></tr></thead><tbody id="sRows">${stmtRowsHTML(work, ownOf(work.k), "all", "")}</tbody></table></div>`;
   const redraw = () => { $("#sRows").innerHTML = stmtRowsHTML(work, ownFor(), $("#sFilter").value, low2($("#sQ").value.trim())); $("#sSum").innerHTML = stmtSummary(work, ownFor()); };
   setTimeout(() => {
     const B = $("#dlgB"); $("#dlg").classList.add("wide");
@@ -2631,11 +2633,11 @@ async function stmtEditor(doc, isNew, note) {
 /* ---------- редактор декларации */
 function declKeysHTML(doc) {
   const keys = Object.keys(DocParse.KEYS).filter(key => !DocParse.FORMS[doc.form] || DocParse.KEYS[key].forms.includes(doc.form));
-  const lineOpt = (l, sel) => `<option value="${esc(l.code)}"${sel ? " selected" : ""}>${esc(l.code)} — ${esc(l.label.slice(0, 70))}${l.vals.length ? " · " + fmt(l.vals[0]) : ""}</option>`;
-  return `<table class="data form dk"><thead><tr><th class="lab">Показатель для сверки</th><th style="text-align:left">Строка декларации</th><th>Сумма, тенге</th></tr></thead><tbody>
+  const lineOpt = (l, sel) => `<option value="${esc(l.code)}"${sel ? " selected" : ""}>${esc(l.code)} — ${esc(l.label.slice(0, 70))}${l.vals.length ? " · " + K1(l.vals[0]) + " тыс." : ""}</option>`;
+  return `<table class="data form dk"><thead><tr><th class="lab">Показатель для сверки</th><th style="text-align:left">Строка декларации</th><th>Сумма, тыс. тг</th></tr></thead><tbody>
     ${keys.map(key => `<tr><td class="lab">${esc(DocParse.KEYS[key].t)}</td>
       <td>${doc.lines.length ? `<select class="inp" data-dkcode="${key}"><option value="">— не использовать / вручную</option>${doc.lines.map(l => lineOpt(l, doc.src?.[key] === l.code)).join("")}</select>` : '<span class="small muted">вручную</span>'}</td>
-      <td class="cell"><input class="inp num" data-dkval="${key}" value="${esc(isNum(doc.vals?.[key]) ? fmt(doc.vals[key]) : "")}"></td></tr>`).join("")}</tbody></table>`;
+      <td class="cell"><input class="inp num" data-dkval="${key}" value="${esc(K1(doc.vals?.[key]))}"></td></tr>`).join("")}</tbody></table>`;
 }
 async function declEditor(doc, isNew, note) {
   ensureDocs();
@@ -2648,18 +2650,19 @@ async function declEditor(doc, isNew, note) {
       <label class="f"><span>Налоговый период</span><select class="inp" id="dPart">${Object.entries(PARTS).map(([v, t]) => `<option value="${v}"${doc.part === v ? " selected" : ""}>${t}</option>`).join("")}</select></label></div>
     <p class="hint">Проверьте, что сумма взята из нужной строки. Выбор строки запоминается для этой формы и подставится в следующий раз.</p>
     <div id="dKeys">${declKeysHTML(doc)}</div>
-    ${doc.lines?.length ? `<details style="margin-top:12px"><summary>Все распознанные строки (${doc.lines.length})</summary><div class="tablewrap" style="max-height:300px"><table class="data"><thead><tr><th class="lab">Код</th><th style="text-align:left">Наименование</th><th>Сумма</th></tr></thead><tbody>${doc.lines.map(l => `<tr><td class="lab">${esc(l.code)}</td><td style="text-align:left;white-space:normal">${esc(l.label)}</td><td>${l.vals.map(v => fmt(v)).join("; ")}</td></tr>`).join("")}</tbody></table></div></details>` : ""}`;
+    ${doc.lines?.length ? `<details style="margin-top:12px"><summary>Все распознанные строки (${doc.lines.length})</summary><div class="tablewrap" style="max-height:300px"><table class="data"><thead><tr><th class="lab">Код</th><th style="text-align:left">Наименование</th><th>Сумма, тыс. тг</th></tr></thead><tbody>${doc.lines.map(l => `<tr><td class="lab">${esc(l.code)}</td><td style="text-align:left;white-space:normal">${esc(l.label)}</td><td>${l.vals.map(v => K1(v)).join("; ")}</td></tr>`).join("")}</tbody></table></div></details>` : ""}`;
   setTimeout(() => {
     const B = $("#dlgB"); $("#dlg").classList.add("wide");
     B.onchange = e => {
       const t = e.target;
       if (t.id === "dForm") { doc.form = t.value; doc.formName = DocParse.FORMS[t.value]?.name || doc.formName; $("#dKeys").innerHTML = declKeysHTML(doc); }
-      if (t.dataset.dkcode !== undefined) { const l = doc.lines.find(x => x.code === t.value); const inp = B.querySelector(`[data-dkval="${t.dataset.dkcode}"]`); if (inp) inp.value = l && l.vals.length ? fmt(l.vals[0]) : ""; }
+      if (t.dataset.dkcode !== undefined) { const l = doc.lines.find(x => x.code === t.value); const inp = B.querySelector(`[data-dkval="${t.dataset.dkcode}"]`); if (inp) inp.value = l && l.vals.length ? K1(l.vals[0]) : ""; }
     };
   });
   const res = await dialog(isNew ? "Декларация: проверьте и сохраните" : "Декларация", body, [{ t: "Отменить", v: null }, { t: "Сохранить", primary: true, v: d => {
     const o = { k: +d.querySelector("#dComp").value, form: d.querySelector("#dForm").value, year: parseInt(d.querySelector("#dYear").value, 10) || null, part: d.querySelector("#dPart").value, vals: {}, src: {} };
-    d.querySelectorAll("[data-dkval]").forEach(inp => { const v = parseNum(inp.value); if (v !== null) o.vals[inp.dataset.dkval] = v; });
+    d.querySelectorAll("[data-dkval]").forEach(inp => { const key = inp.dataset.dkval, l = doc.lines?.find(x => x.code === d.querySelector(`[data-dkcode="${key}"]`)?.value), exact = [doc.vals?.[key], l?.vals?.[0]].find(x => isNum(x) && K1(x) === inp.value);
+      const v = exact !== undefined ? exact : fromK(inp.value); if (v !== null) o.vals[key] = v; });
     d.querySelectorAll("[data-dkcode]").forEach(s => { o.src[s.dataset.dkcode] = s.value; });
     return o;
   } }]);
@@ -2676,17 +2679,18 @@ async function declEditor(doc, isNew, note) {
 /* ---------- редактор справки банка */
 function bankRowsHTML(doc) {
   const ms = Object.keys(doc.months || {}).sort();
-  return `<table class="data form bk"><thead><tr><th class="lab">Месяц</th><th>Поступления (кредит)</th><th>Списания (дебет)</th><th></th></tr></thead><tbody>
-    ${ms.map(m => `<tr><td class="lab"><input class="inp" type="month" data-bm="${m}" value="${m}"></td><td class="cell"><input class="inp num" data-bcr="${m}" value="${esc(m2(doc.months[m].cr))}"></td><td class="cell"><input class="inp num" data-bdb="${m}" value="${esc(m2(doc.months[m].db))}"></td><td><button class="btn ghost danger" data-bmdel="${m}" type="button">×</button></td></tr>`).join("")}
+  return `<table class="data form bk"><thead><tr><th class="lab">Месяц</th><th>Поступления (кредит), тыс.</th><th>Списания (дебет), тыс.</th><th></th></tr></thead><tbody>
+    ${ms.map(m => `<tr><td class="lab"><input class="inp" type="month" data-bm="${m}" value="${m}"></td><td class="cell"><input class="inp num" data-bcr="${m}" value="${esc(K1(doc.months[m].cr))}"></td><td class="cell"><input class="inp num" data-bdb="${m}" value="${esc(K1(doc.months[m].db))}"></td><td><button class="btn ghost danger" data-bmdel="${m}" type="button">×</button></td></tr>`).join("")}
     <tr class="calc"><td class="lab">Итого по месяцам</td><td id="bSumCr"></td><td id="bSumDb"></td><td></td></tr>
-    ${doc.total ? `<tr><td class="lab">Итого по справке</td><td>${m2(doc.total.cr)}</td><td>${m2(doc.total.db)}</td><td></td></tr>` : ""}</tbody></table>
+    ${doc.total ? `<tr><td class="lab">Итого по справке</td><td>${K1(doc.total.cr)}</td><td>${K1(doc.total.db)}</td><td></td></tr>` : ""}</tbody></table>
     <p style="margin-top:8px"><button class="btn" data-bmadd type="button">Добавить месяц</button></p>`;
 }
 function bankReadRows(B, doc) {
   const months = {};
   B.querySelectorAll("[data-bm]").forEach(inp => {
     const old = inp.dataset.bm, m = inp.value || old;
-    const cr = parseNum(B.querySelector(`[data-bcr="${old}"]`).value), db = parseNum(B.querySelector(`[data-bdb="${old}"]`).value);
+    const o0 = doc.months?.[old] || {}, keep = (sel, v0) => { const x = B.querySelector(sel).value; return x === K1(v0) ? v0 : fromK(x); };  // без правки — точная сумма из документа
+    const cr = keep(`[data-bcr="${old}"]`, o0.cr), db = keep(`[data-bdb="${old}"]`, o0.db);
     if (/^\d{4}-\d{2}$/.test(m)) months[m] = { cr: N(cr) + N(months[m]?.cr), db: N(db) + N(months[m]?.db) };
   });
   return months;
@@ -2701,10 +2705,10 @@ async function bankEditor(doc, isNew, note) {
       <label class="f"><span>Валюта</span><select class="inp" id="bCur">${opts(CURS, CURS.includes(doc.cur) ? doc.cur : "Другая")}</select></label>
       <label class="f" id="bRateF" ${doc.cur === "KZT" ? 'style="display:none"' : ""}><span>Курс: тенге за 1 единицу валюты</span><input class="inp num" id="bRate" value="${esc(isNum(doc.rate) ? fmt(doc.rate, "m1") : "")}"></label></div>
     ${doc.rangeOnly ? `<p class="hint">В справке обороты одной суммой за период (без разбивки по месяцам).</p><div class="grid2"><label class="f"><span>С (дд.мм.гггг)</span><input class="inp" id="bFrom" value="${esc(doc.from)}"></label><label class="f"><span>По (дд.мм.гггг)</span><input class="inp" id="bTo" value="${esc(doc.to)}"></label>
-      <label class="f"><span>Поступления, в валюте счёта</span><input class="inp num" id="bTcr" value="${esc(m2(doc.total?.cr))}"></label><label class="f"><span>Списания, в валюте счёта</span><input class="inp num" id="bTdb" value="${esc(m2(doc.total?.db))}"></label></div>`
-      : `<p class="hint">Суммы — в валюте счёта, как в справке. Поступления — обороты по кредиту счёта, списания — по дебету.</p><div id="bRows">${bankRowsHTML(doc)}</div>`}`;
+      <label class="f"><span>Поступления, тыс. (в валюте счёта)</span><input class="inp num" id="bTcr" value="${esc(K1(doc.total?.cr))}"></label><label class="f"><span>Списания, тыс. (в валюте счёта)</span><input class="inp num" id="bTdb" value="${esc(K1(doc.total?.db))}"></label></div>`
+      : `<p class="hint">Суммы — в тысячах (тыс. тг; по валютному счёту — тыс. единиц валюты), переведены из справки автоматически. Поступления — обороты по кредиту счёта, списания — по дебету.</p><div id="bRows">${bankRowsHTML(doc)}</div>`}`;
   const sums = () => { const B = $("#dlgB"); if (!B || doc.rangeOnly) return; const ms = bankReadRows(B, doc); let cr = 0, db = 0; for (const o of Object.values(ms)) { cr += o.cr; db += o.db; }
-    const a = $("#bSumCr"), b = $("#bSumDb"); if (a) a.textContent = m2(cr); if (b) b.textContent = m2(db);
+    const a = $("#bSumCr"), b = $("#bSumDb"); if (a) a.textContent = K1(cr); if (b) b.textContent = K1(db);
     if (doc.total && a) { a.classList.toggle("bad", isNum(doc.total.cr) && Math.abs(cr - doc.total.cr) > 1.5); b.classList.toggle("bad", isNum(doc.total.db) && Math.abs(db - doc.total.db) > 1.5); } };
   setTimeout(() => {
     const B = $("#dlgB"); $("#dlg").classList.add("wide"); sums();
@@ -2721,7 +2725,7 @@ async function bankEditor(doc, isNew, note) {
   });
   const res = await dialog(isNew ? "Справка банка: проверьте и сохраните" : "Справка банка", body, [{ t: "Отменить", v: null }, { t: "Сохранить", primary: true, v: d => {
     const o = { k: +d.querySelector("#bComp").value, bank: d.querySelector("#bBank").value.trim(), acc: d.querySelector("#bAcc").value.trim(), cur: d.querySelector("#bCur").value, rate: parseNum(d.querySelector("#bRate").value) };
-    if (doc.rangeOnly) { o.from = d.querySelector("#bFrom").value.trim(); o.to = d.querySelector("#bTo").value.trim(); o.total = { cr: parseNum(d.querySelector("#bTcr").value), db: parseNum(d.querySelector("#bTdb").value) }; }
+    if (doc.rangeOnly) { o.from = d.querySelector("#bFrom").value.trim(); o.to = d.querySelector("#bTo").value.trim(); o.total = { cr: fromK(d.querySelector("#bTcr").value), db: fromK(d.querySelector("#bTdb").value) }; }
     else o.months = bankReadRows(d.querySelector("#dlgB"), doc);
     return o;
   } }]);
