@@ -4,9 +4,10 @@
 const DocParse = (() => {
   const norm = s => String(s ?? "").replace(/[   ]/g, " ").replace(/ё/g, "е").replace(/Ё/g, "Е");
   const low = s => norm(s).toLowerCase();
-  const NUMCELL = /^[-−–(]?\s*\d[\d\s.,]*\)?$/;
+  const NUMCELL = /^[-−–+(]?\s*\d[\d\s.,]*\)?$/;
+  const stripCur = s => norm(s).replace(/₸|\bkzt\b|\bтг\.?|\bтенге\b/gi, "").trim();
   function amt(s) {
-    let t = norm(s).replace(/\s+/g, "").replace(/[−–]/g, "-");
+    let t = stripCur(s).replace(/\s+/g, "").replace(/[−–]/g, "-").replace(/^\+/, "");
     if (!/\d/.test(t)) return null;
     let neg = false;
     if (/^\(.*\)$/.test(t)) { neg = true; t = t.slice(1, -1); }
@@ -21,7 +22,7 @@ const DocParse = (() => {
     const v = parseFloat(t);
     return isFinite(v) ? (neg ? -v : v) : null;
   }
-  const isNumCell = s => NUMCELL.test(norm(s).trim()) && /\d/.test(s);
+  const isNumCell = s => NUMCELL.test(stripCur(s)) && /\d/.test(s);
   const allLines = pdf => pdf.pages.flatMap((p, pi) => p.lines.map(l => ({ ...l, page: pi })));
   // «2 0 2 4» → «2024» (цифры в клетках)
   const squeeze = s => norm(s).replace(/\b\d(?: \d\b)+/g, m => m.replace(/ /g, ""));
@@ -247,11 +248,193 @@ const DocParse = (() => {
     return { bank, period, bin: binM ? binM[1] : "", accounts: secs.filter(s => s.rows || s.total) };
   }
 
+  /* ---------- выписки по счёту: операции */
+  const DATE = /^(\d{2})[./](\d{2})[./](\d{4}|\d{2})\b/;
+  function toISO(s) {
+    const m = DATE.exec(norm(s).trim()); if (!m) { const m2 = /^(\d{4})-(\d{2})-(\d{2})/.exec(norm(s).trim()); return m2 ? `${m2[1]}-${m2[2]}-${m2[3]}` : null; }
+    const y = m[3].length === 2 ? "20" + m[3] : m[3];
+    return +m[2] >= 1 && +m[2] <= 12 && +m[1] >= 1 && +m[1] <= 31 ? `${y}-${m[2]}-${m[1]}` : null;
+  }
+  function colSem(text) {
+    const t = low(text).replace(/\s+/g, " ").trim();
+    if (!t) return null;
+    if (/^(дата|date)|дата\s+(операц|провод|документ|валютир)|^день/.test(t)) return "date";
+    if (/кнп|код\s+назнач|knp/.test(t)) return "knp";
+    if (/назначени|основани|описани|детал|purpose|комментар|содержани/.test(t)) return "purp";
+    if (/эквивалент|в\s+тенге|в\s+нац\S*\s+валют|equivalent/.test(t)) return "eq";
+    if (/^(сумма\s+)?(по\s+)?(дебет|списан|расход)|debit|withdraw|^расход/.test(t)) return "db";
+    if (/^(сумма\s+)?(по\s+)?(кредит|поступ|приход|зачисл)|credit|^приход/.test(t)) return "cr";
+    if (/корреспондент|контрагент|отправител|получател|плательщик|бенефициар|counterparty|наименован/.test(t)) return "cp";
+    if (/^(бин|иин)|бин\s*\/\s*иин|^bin|^iin/.test(t)) return "bin";
+    if (/^(сумма|amount)/.test(t)) return "amt";
+    if (/номер\s+док|№\s*док|^№|^номер|^doc/.test(t)) return "doc";
+    if (/иик|iban|сч[её]т/.test(t)) return "iik";
+    if (/банк|бик|bic/.test(t)) return "bnk";
+    if (/^валют|currency/.test(t)) return "cur";
+    if (/операц|^вид|д\s*\/\s*к|тип/.test(t)) return "op";
+    return null;
+  }
+  function stmtHeader(line) {
+    const cols = [];
+    for (const c of line.cells) { const k = colSem(c.s); if (k) cols.push({ k, x1: c.x, x2: c.x2, s: c.s }); }
+    const ks = new Set(cols.map(c => c.k));
+    const score = ks.has("date") && (ks.has("cr") || ks.has("amt") || ks.has("db")) ? ks.size : 0;
+    return score >= 3 ? cols : null;
+  }
+  function isStmt(pdf) {
+    const L = allLines(pdf); let hdr = false, n = 0;
+    for (const l of L) { if (!hdr && stmtHeader(l)) hdr = true; else if (hdr && toISO(l.cells[0]?.s || "")) n++; }
+    return hdr ? n : 0;
+  }
+  function parseStmt(pdf) {
+    const L = allLines(pdf), txt = L.map(l => norm(l.text)).join("\n"), txs = [];
+    let cols = null, cur = null, page = -1;
+    const bm = BANKS.exec(txt);
+    const accM = IBAN.exec(txt);
+    let accCur = null;
+    for (const l of L.slice(0, 40)) if (/валют/i.test(l.text) || IBAN.test(norm(l.text))) { const c = curCode(norm(l.text).replace(IBAN, "")); if (c) { accCur = c; break; } }
+    const pm = /(?:с|period\s+from|from|за\s+период)\s*(\d{2}\.\d{2}\.\d{4})\D{1,15}?(?:по|to|-|–)\s*(\d{2}\.\d{2}\.\d{4})/i.exec(txt);
+    for (let i = 0; i < L.length; i++) {
+      const ln = L[i];
+      const h = stmtHeader(ln);
+      if (h) {
+        // шапка в две строки: «Сумма» сверху, «Дебет | Кредит» снизу (или наоборот)
+        const nx = L[i + 1];
+        if (nx && nx.page === ln.page && !toISO(nx.cells[0]?.s || "")) for (const c of nx.cells) { const k = colSem(c.s); if (k && !h.some(x => x.k === k)) h.push({ k, x1: c.x, x2: c.x2, s: c.s }); }
+        cols = h;
+        cur = null; continue;
+      }
+      if (!cols) continue;
+      const lt = low(ln.text);
+      if (/^(итого|всего|обороты|входящ|исходящ|остаток|сальдо|страниц|page)/.test(lt)) { cur = null; continue; }
+      // ячейки → колонки
+      const f = {};
+      for (const c of ln.cells) {
+        const xc = (c.x + c.x2) / 2; let best = null, d = 1e9;
+        for (const col of cols) { const dd = xc >= col.x1 - 4 && xc <= col.x2 + 4 ? 0 : Math.min(Math.abs(xc - col.x1), Math.abs(xc - col.x2)); if (dd < d) { d = dd; best = col; } }
+        if (best) f[best.k] = f[best.k] ? f[best.k] + " " + c.s : c.s;
+      }
+      const iso = f.date ? toISO(f.date) : null;
+      if (iso) {
+        cur = { d: iso, doc: f.doc || "", cp: f.cp || "", bin: "", knp: "", purp: f.purp || "", op: f.op || "", iik: f.iik || "", db: 0, cr: 0, eq: null, cur: f.cur ? curCode(f.cur) : null, _f: f };
+        txs.push(cur); page = ln.page;
+      } else if (cur && ln.page === page) {
+        for (const k of ["cp", "purp", "op", "doc", "bin", "knp", "iik"]) if (f[k]) cur[k] = (cur[k] ? cur[k] + " " : "") + f[k];
+        for (const k of ["db", "cr", "amt", "eq"]) if (f[k] && !cur._f[k]) cur._f[k] = f[k];
+      } else continue;
+      if (f.bin) cur.bin = (cur.bin ? cur.bin + " " : "") + f.bin;
+      if (f.knp) cur.knp = (cur.knp ? cur.knp + " " : "") + f.knp;
+    }
+    for (const t of txs) {
+      const f = t._f; delete t._f;
+      const n = k => (f[k] ? amt(f[k].replace(/[^\d\s.,()+−–-]/g, "")) : null);
+      let db = n("db"), cr = n("cr");
+      if (db === null && cr === null && f.amt) {
+        const v = amt(f.amt), sign = /^\s*[-−–]/.test(norm(f.amt)) ? -1 : 1, op = low(t.op + " " + f.amt);
+        if (v !== null) { if (/(^|\s)(к|кредит|приход|зачисл|пополн)/.test(op) && !/(^|\s)(д|дебет|расход|списан)\b/.test(op)) cr = Math.abs(v); else if (/(^|\s)(д|дебет|расход|списан|покупк|оплат)/.test(op) || sign < 0 || v < 0) db = Math.abs(v); else cr = Math.abs(v); }
+      }
+      t.db = Math.abs(db || 0); t.cr = Math.abs(cr || 0);
+      if (f.eq) t.eq = amt(f.eq);
+      const binM = /\b(\d{12})\b/.exec(t.bin + " " + t.cp) || /(?:бин|иин)\D{0,5}(\d{12})/i.exec(t.purp);
+      t.bin = binM ? binM[1] : "";
+      const knpM = /\b(\d{3})\b/.exec(t.knp) || /кнп\D{0,5}(\d{3})/i.exec(t.purp);
+      t.knp = knpM ? knpM[1] : "";
+      for (const k of ["cp", "purp", "op", "doc", "iik"]) t[k] = norm(t[k]).replace(/\s+/g, " ").trim();
+      if (t.cur === null) delete t.cur;
+    }
+    const binC = /(?:бин|иин)[^\d]{0,30}(\d{12})/i.exec(squeeze(L.slice(0, 30).map(l => l.text).join(" ")));
+    return { bank: bm ? bm[0].replace(/\s+/g, " ") : "", acc: accM ? accM[0] : "", cur: accCur || "KZT", from: pm ? pm[1] : "", to: pm ? pm[2] : "", bin: binC ? binC[1] : "", txs: txs.filter(t => t.db || t.cr) };
+  }
+
+  /* ---------- чистые кредитовые обороты: что не принимается в расчёт */
+  const CATS = {
+    loan: "Выдача кредитов и займов",
+    conv: "Конвертация (продажа валюты)",
+    own: "Перевод собственных средств",
+    ret: "Возврат платёжных документов",
+    aid: "Фин. помощь, субсидии, штрафы и пени, вознаграждение, страховые",
+    cash: "Взносы наличными",
+  };
+  const KNP_CAT = { "411": "loan", "413": "loan", "419": "loan", "421": "loan", "423": "loan", "429": "loan", "211": "conv", "213": "conv", "221": "conv", "223": "conv", "230": "conv", "342": "own", "343": "own", "324": "own", "329": "own", "331": "cash", "333": "aid" };
+  const clean = s => low(s).replace(/[«»"'“”]/g, "").replace(/\b(тоо|ао|ип|кх|ооо|пк|гкп|рго|ргп|llp|jsc)\b/g, "").replace(/\s+/g, " ").trim();
+  function classify(t, own) {
+    if (!t.cr) return null;
+    const x = low(`${t.purp} ${t.op} ${t.cp}`), p = low(`${t.purp} ${t.op}`);
+    const ownBin = t.bin && own.bins.includes(t.bin), ownName = own.names.some(n => n && n.length > 3 && clean(t.cp) === n);
+    // исключения, которые остаются в расчёте
+    const gchp = /гчп|государственно[-\s]?частн/.test(x);
+    const cashOk = /инкасс/.test(x) || ((/индивидуальн\S*\s+предпринимат|(^|\s)ип(\s|$)/.test(x)) && /договор|контракт/.test(x));
+    if (/конверт|продаж\S*\s+(иностранн\S*\s+)?валют|обмен\S*\s+валют|покупк\S*\s+тенге|conversion|fx\s*deal/.test(p)) return ["conv", "назначение: конвертация / продажа валюты"];
+    if (/(выдач|предоставлен|зачислен|получен)\S*\s+(\S+\s+){0,3}(кредит|займ|заем|транш)|транш|(по|согласно)\s+(\S+\s+){0,2}(кредитн\S*|заемн\S*|займ\S*)\s+(договор|соглашени|линии)|(кредитн|заемн)\S*\s+средств|возврат\S*\s+(\S+\s+){0,2}(займ|заем|кредит)|погашен\S*\s+(\S+\s+){0,2}(займ|заем)|овердрафт/.test(p)) return ["loan", "назначение: кредит / заём"];
+    if (ownBin || ownName) return ["own", ownBin ? "отправитель — сама компания (БИН)" : "отправитель — сама компания"];
+    if (/перевод\S*\s+(\S+\s+){0,2}(собственн|своих|сво\S+\s+средств|между\s+(своими\s+)?сч)|собственн\S+\s+(денежн\S+\s+)?средств|между\s+(своими\s+)?сч[её]т|с\s+(текущего\s+|депозитного\s+)?сч[её]та\s+на\s+(текущий\s+)?сч[её]т|возврат\S*\s+(\S+\s+)?(с\s+)?депозит|изъяти\S*\s+(\S+\s+)?депозит|закрыти\S*\s+депозит/.test(p)) return ["own", "назначение: перевод собственных средств"];
+    if (/возврат/.test(p) && /(платеж|плат\.|п\/п|ошибочн|излишн|реквизит|не\s*зачисл|неверн|отказ|ненадлежащ|оплат|аванс|средств|денег|денежн)/.test(p)) return ["ret", "назначение: возврат платежа"];
+    if (/субсиди/.test(p) && !gchp) return ["aid", "субсидия"];
+    if (/финансов\S*\s+помощ|фин\.?\s*помощ|безвозмездн/.test(p)) return ["aid", "финансовая помощь"];
+    if (/штраф|(^|\s)пени(\s|$|,)|(^|\s)пеня|неустойк/.test(p)) return ["aid", "штрафы, пени"];
+    if (/(вознагражден|процент|интерес)\S*\s+(\S+\s+){0,3}(депозит|остат|вклад|сч[её]т)|капитализац|начислен\S*\s+(\S+\s+)?вознагражден/.test(p)) return ["aid", "вознаграждение (проценты)"];
+    if (/страхов\S*\s+(преми|возмещ|выплат|сумм)|страховое\s+возмещ/.test(p)) return ["aid", "страховые выплаты"];
+    if (/взнос\S*\s+(\S+\s+)?наличн|наличн\S*\s+(деньг|средств)|пополнен\S*\s+(\S+\s+)?наличн|внесени\S*\s+наличн|cash\s+deposit|(^|\s)наличными/.test(p) && !cashOk) return ["cash", "взнос наличными"];
+    const kc = KNP_CAT[t.knp];
+    if (kc && !(kc === "cash" && cashOk)) return [kc, "по коду назначения платежа " + t.knp];
+    return null;
+  }
+
+  /* ---------- Excel как «страница» из строк и ячеек — те же разборщики работают и для таблиц */
+  function sheetToPdf(sheets) {
+    const pages = [];
+    for (const sh of sheets) {
+      if (sh.hidden) continue;
+      const lines = [];
+      (sh.rows || []).forEach((row, ri) => {
+        if (!row) return;
+        const cells = [];
+        row.forEach((v, ci) => {
+          if (v === undefined || v === null || v === "") return;
+          let s = v;
+          if (typeof v === "number") s = String(v);
+          s = String(s).replace(/\s+/g, " ").trim(); if (!s) return;
+          cells.push({ x: ci * 100, x2: ci * 100 + 90, s, fs: 10 });
+        });
+        if (cells.length) lines.push({ y: -ri * 12, fs: 10, cells, text: cells.map(c => c.s).join("  ") });
+      });
+      pages.push({ lines });
+    }
+    return { pages, noText: false };
+  }
+  // даты Excel (число дней с 1899-12-30) в колонке «дата» превращаем в дд.мм.гггг
+  function fixExcelDates(pdf) {
+    for (const p of pdf.pages) {
+      let dcol = null;
+      for (const l of p.lines) {
+        const h = stmtHeader(l);
+        if (h) { const d = h.find(c => c.k === "date"); dcol = d ? d.x1 : null; continue; }
+        for (const c of l.cells) if ((dcol !== null && c.x === dcol || c.x === 0) && /^\d{5}(\.\d+)?$/.test(c.s)) {
+          const n = parseFloat(c.s); if (n > 30000 && n < 80000) { const d = new Date(Math.round((n - 25569) * 86400000)); c.s = `${pad(d.getUTCDate())}.${pad(d.getUTCMonth() + 1)}.${d.getUTCFullYear()}`; }
+        }
+        l.text = l.cells.map(c => c.s).join("  ");
+      }
+    }
+    return pdf;
+  }
+  const pad = n => String(n).padStart(2, "0");
+
+  function detect(pdf) {
+    const nd = isDecl(pdf), ns = isStmt(pdf), nb = isBank(pdf);
+    if (nd >= 3 && nd * 2 >= nb) return "decl";
+    if (ns >= 3) return "stmt";
+    if (nb >= 3) return "bank";
+    return nd >= 2 ? "decl" : ns >= 1 ? "stmt" : null;
+  }
   async function read(buf) {
     const pdf = await PdfReader.read(buf);
-    const nd = isDecl(pdf), nb = isBank(pdf);
-    let kind = nd >= 3 && nd * 2 >= nb ? "decl" : nb >= 3 ? "bank" : nd >= 2 ? "decl" : null;
-    return { pdf, kind, decl: kind === "decl" ? parseDecl(pdf) : null, bank: kind === "bank" ? parseBank(pdf) : null };
+    const kind = pdf.noText ? null : detect(pdf);
+    return { pdf, kind, decl: kind === "decl" ? parseDecl(pdf) : null, bank: kind === "bank" ? parseBank(pdf) : null, stmt: kind === "stmt" ? parseStmt(pdf) : null };
   }
-  return { read, parseDecl, parseBank, pickKeys, isDecl, isBank, monthLabel, headerSem, amt, FORMS, KEYS };
+  function readSheets(sheets) {
+    const pdf = fixExcelDates(sheetToPdf(sheets));
+    const kind = detect(pdf);
+    return { pdf, kind, decl: kind === "decl" ? parseDecl(pdf) : null, bank: kind === "bank" ? parseBank(pdf) : null, stmt: kind === "stmt" ? parseStmt(pdf) : null };
+  }
+  return { read, readSheets, sheetToPdf, parseDecl, parseBank, parseStmt, classify, clean, pickKeys, isDecl, isBank, isStmt, monthLabel, headerSem, amt, toISO, FORMS, KEYS, CATS };
 })();

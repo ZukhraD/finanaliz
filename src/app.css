@@ -342,3 +342,20 @@ table.rmap.tax td.v { min-width: 150px; }
 table.rmap.tax td .pertitle { display: block; }
 details > summary { cursor: pointer; color: var(--blue, #023DFF); font-size: 13px; }
 table.data td.lab .formula { display: block; font-family: var(--note); font-size: 11px; color: var(--muted); font-weight: 400; }
+table.data.bm td.strong { font-weight: 700; color: var(--ink); }
+table.data.tx tr.ex td { background: #FFF6E5; }
+table.data.tx select.inp { min-width: 230px; }
+table.data.tx td .formula, table.data td .formula { display: block; font-family: var(--note); font-size: 11px; color: var(--muted); }
+.facts.sm { grid-template-columns: repeat(5, minmax(0, 1fr)); margin: 6px 0 10px; }
+.facts.sm b { font-size: 16px; }
+table.data.sumt { margin-top: 4px; }
+table.data.sumt td.strong, table.data.bm td.strong { font-weight: 700; }
+table.data.bm th.exh { text-align: center; font-family: var(--note); font-size: 11px; font-weight: 400; color: var(--muted); }
+table.data.tx select.inp { min-width: 190px; max-width: 220px; }
+table.data.tx td:nth-child(4) { white-space: nowrap; }
+table.data.bm th.lab, table.data.bm td.lab { min-width: 150px; }
+table.data.tx th.lab, table.data.tx td.lab { min-width: 92px; width: 92px; }
+table.data.tx td:nth-child(2) { min-width: 150px !important; max-width: 200px; }
+table.data.tx td:nth-child(3) { min-width: 200px !important; }
+table.data.sumt th.lab, table.data.sumt td.lab { min-width: 110px; }
+table.data.bm th { white-space: normal; vertical-align: bottom; }

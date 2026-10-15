@@ -12,7 +12,7 @@ const CHK_TXT = { ok: ["ok", "ОК"], bad: ["crit", "Расхождение"], n
 function render() {
   if (!C) return renderClients();
   PROB = problems();
-  const steps = [["card", "Карточка"], ["bal", "Баланс"], ["odr", "ОПиУ"], ["cf", "ДДС"], ["decl", "Налоги и банк"], ["cons", "Свод и прогноз"], ["an", "Анализ"], ["prob", "Проблемы"], ["concl", "Заключение"]];
+  const steps = [["card", "Карточка"], ["bal", "Баланс"], ["odr", "ОПиУ"], ["cf", "ДДС"], ["tax", "Налоги"], ["bank", "Банк"], ["cons", "Свод и прогноз"], ["an", "Анализ"], ["prob", "Проблемы"], ["concl", "Заключение"]];
   if (!steps.some(st => st[0] === PAGE) && PAGE !== "map" && PAGE !== "log") PAGE = "card";
   document.body.innerHTML = `
   <div class="app">
@@ -348,7 +348,7 @@ function discrepancies() {
 }
 function pageProb() {
   const pers = C.periods;
-  const groups = [["card", "Карточка"], ["bal", "Баланс"], ["odr", "ОПиУ"], ["cf", "ДДС"], ["decl", "Налоги и банк"], ["cons", "Свод группы и прогноз"], ["an", "Анализ"]];
+  const groups = [["card", "Карточка"], ["bal", "Баланс"], ["odr", "ОПиУ"], ["cf", "ДДС"], ["tax", "Налоги"], ["bank", "Банк"], ["cons", "Свод группы и прогноз"], ["an", "Анализ"]];
   const cnt = s => PROB.filter(p => p.sev === s).length;
   let h = `<div class="pagehead"><div class="lead"><h1>Проблемы и решения</h1><p>Всё, что мешает выводу: ошибки и пропуски в данных, расхождения, зоны риска и дефициты в прогнозе — с подсказкой, что делать. Ячейки с проблемами подсвечены на страницах форм.</p></div></div>
     <div class="chips" style="margin-bottom:14px">${["crit", "risk", "chk", "nd"].map(s => `<span class="st ${s}">${SEV[s]}: ${cnt(s)}</span>`).join("")}</div>`;
@@ -434,7 +434,7 @@ function pageLog() {
   return `<div class="pagehead"><div class="lead"><h1>Журнал загрузок</h1><p>Что, когда и из какого файла загружено.</p></div></div>
   ${rows ? `<div class="tablewrap"><table class="data"><thead><tr><th class="lab">Когда</th><th style="text-align:left">Файл</th><th style="text-align:left">Куда</th><th style="text-align:left">Результат</th></tr></thead><tbody>${rows}</tbody></table></div>` : `<div class="empty"><h2>Загрузок пока не было</h2><p class="muted">Формы загружаются на странице «Отчётность».</p></div>`}`;
 }
-const PAGES = { card: pageCard, bal: () => pageForm("bal"), odr: () => pageForm("odr"), cf: () => pageForm("cf"), decl: pageDecl, cons: pageCons, an: pageAn, prob: pageProb, concl: pageConcl, map: pageMap, log: pageLog };
+const PAGES = { card: pageCard, bal: () => pageForm("bal"), odr: () => pageForm("odr"), cf: () => pageForm("cf"), tax: pageTax, bank: pageBank, cons: pageCons, an: pageAn, prob: pageProb, concl: pageConcl, map: pageMap, log: pageLog };
 
 /* ---------- диалоги */
 function dialog(title, body, buttons) {
@@ -458,7 +458,7 @@ async function importDialog() {
   const compsOpts = C.companies.map((x, i) => `<option value="${i + 1}"${COMP_TAB === i + 1 ? " selected" : ""}>К${i + 1} · ${esc(x.name || "без названия")}</option>`).join("");
   const body = `<p class="muted">Баланс, ОПиУ и ОДДС в Excel (.xlsx, .xlsm) — можно сразу несколько файлов одной компании за один период. Файлы читаются здесь же, в браузере, и никуда не отправляются.</p>
     <div class="grid2" style="margin:12px 0"><label class="f"><span>Компания</span><select class="inp" id="iComp">${compsOpts}</select></label><label class="f"><span>Период</span><select class="inp" id="iPer">${persOpts}</select></label></div>
-    <p class="small muted" style="margin-top:6px">PDF деклараций и справок банков тоже можно перетащить сюда — они попадут на страницу «Налоги и банк».</p>
+    <p class="small muted" style="margin-top:6px">PDF деклараций, выписок и справок банков тоже можно перетащить сюда — они попадут на страницы «Налоги» и «Банк».</p>
     <label class="drop" id="iDrop"><input type="file" id="iFiles" multiple accept=".xlsx,.xlsm,.pdf" style="display:none"><span id="iTxt">Перетащите файлы сюда или нажмите, чтобы выбрать</span></label>`;
   let files = [];
   setTimeout(() => {
@@ -471,9 +471,9 @@ async function importDialog() {
   const sel = await dialog("Загрузить формы отчётности", body, [{ t: "Отменить", v: null }, { t: "Загрузить", primary: true, v: () => ({ k: +$("#iComp").value, pid: $("#iPer").value }) }]);
   if (!sel || !files.length) { if (sel) toast("Файлы не выбраны"); return; }
   const pdfs = files.filter(f => /\.pdf$/i.test(f.name)); files = files.filter(f => !/\.pdf$/i.test(f.name));
-  if (pdfs.length && !files.length) return runPdfImport(pdfs, sel.k);
+  if (pdfs.length && !files.length) return runDocImport(pdfs, sel.k);
   const rep = await importFiles(files, sel.k, sel.pid, askUnits);
-  if (pdfs.length) { await importPdfFiles(pdfs, sel.k); toast("PDF загружены — см. страницу «Налоги и банк»"); }
+  if (pdfs.length) { await importDocs(pdfs, sel.k); toast("PDF загружены — см. страницы «Налоги» и «Банк»"); }
   COMP_TAB = sel.k; if (!["bal", "odr", "cf"].includes(PAGE)) PAGE = "bal"; render();
   const lines = rep.map(r => `<div class="logline"><b>${esc(r.file)}</b>${r.sheet ? " / " + esc(r.sheet) : ""}: ${r.err ? stChip("crit", "не загружено") + " " + esc(r.err) : `${stChip("ok", SRC_TXT[r.kind])} ${r.n} строк, ${esc(r.prof)}, ${esc(r.units)}${r.over ? `, перезаписано ${r.over}` : ""}${r.miss.length ? `<br><span class="small muted">В файле нет кодов: ${esc(r.miss.join(", "))}</span>` : ""}`}</div>`).join("");
   await dialog("Результат загрузки", lines + `<p class="small muted" style="margin-top:10px">Загруженные значения отмечены полосой слева; проверьте их и страницу «Сверки».</p>`, [{ t: "Готово", primary: true, v: true }]);
