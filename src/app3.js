@@ -127,7 +127,7 @@ function pageCard() {
   return `<div class="pagehead"><div class="lead"><h1>Карточка клиента</h1><p>Клиент, состав группы и отчётные периоды. Периоды идут от старого к новому; у всех компаний группы они одинаковые.</p></div></div>
   <section class="panel"><h2>Клиент и запрос</h2><div class="grid2">
     ${f("name", "Клиент / группа")}${f("bin", "БИН основной компании")}${f("activity", "Описание деятельности (свободно)")}${f("region", "Регион")}
-    ${f("analyst", "Аналитик")}${f("date", "Дата анализа", "date")}${sel("purpose", "Цель финансирования", S.lists.fpurpose)}${sel("product", "Продукт", S.lists.product)}
+    ${f("analyst", "Кредитный менеджер")}${f("date", "Дата анализа", "date")}${sel("purpose", "Цель финансирования", S.lists.fpurpose)}${sel("product", "Продукт", S.lists.product)}
     <label class="f"><span>Запрашиваемая сумма, тыс. тг</span><input class="inp" data-card="amount" data-num value="${esc(fmt(c.amount))}"></label>
     <label class="f"><span>Допуск сверок, тыс. тг</span><input class="inp" data-card="tol" data-num value="${esc(fmt(c.tol))}"></label>
   </div></section>
@@ -221,7 +221,7 @@ function pageCons() {
     const ck = pers.map(p => elimChecks(p.id));
     h += `<tr class="sec"><td class="lab" colspan="${pers.length + 1}">Контроль</td></tr>`;
     for (let i = 0; i < 2; i++) h += `<tr><td class="lab">${ck[0][i][0]}</td>${ck.map(c => `<td>${stChip(...CHK_TXT[c[i][1]])}</td>`).join("")}</tr>`;
-    h += `<tr><td class="lab">Подтверждено аналитиком</td>${pers.map(p => `<td><label><input type="checkbox" data-elimok="${p.id}" ${C.elimOk?.[p.id] ? "checked" : ""}> да</label></td>`).join("")}</tr></tbody></table></div></section>`;
+    h += `<tr><td class="lab">Подтверждено кредитным менеджером</td>${pers.map(p => `<td><label><input type="checkbox" data-elimok="${p.id}" ${C.elimOk?.[p.id] ? "checked" : ""}> да</label></td>`).join("")}</tr></tbody></table></div></section>`;
     h += `<section class="panel"><h2>Консолидированные показатели группы</h2><div class="tablewrap" style="max-height:none"><table class="data"><thead><tr><th class="lab">Показатель, тыс. тг</th>${pers.map(p => `<th>${esc(p.label)}</th>`).join("")}</tr></thead><tbody>
       ${[["rev", "Выручка"], ["ebitda", "EBITDA"], ["ni", "Чистая прибыль"], ["ta", "Итого активы"], ["eq", "Капитал"], ["bchk", "Контроль: активы − пассивы"]].map(([k, l]) => `<tr><td class="lab">${l}</td>${pers.map(p => { const v = val(0, k, p.id); return `<td class="${isNum(v) && v < 0 ? "neg" : ""}">${fmt(v)}</td>`; }).join("")}</tr>`).join("")}
       <tr><td class="lab">Общий долг</td>${pers.map(p => `<td>${fmt(ratio(0, "debt", p.id))}</td>`).join("")}</tr></tbody></table></div></section>`;
@@ -383,12 +383,12 @@ function riskSummary(obj) {
 }
 function pageConcl() {
   const rs = riskSummary(C.obj);
-  return `<div class="pagehead"><div class="lead"><h1>Заключение</h1><p>Цифры и оценки подставляются автоматически из анализа; выводы и рекомендацию пишет аналитик.</p></div>
+  return `<div class="pagehead"><div class="lead"><h1>Заключение</h1><p>Цифры и оценки подставляются автоматически из анализа; выводы и рекомендацию пишет кредитный менеджер.</p></div>
     <div class="toolbar">${objSelect()}<button class="btn primary" data-act="word">Скачать в Word</button><button class="btn" data-act="print">Печать / PDF</button></div></div>
   <section class="panel noprint"><h2>Оценка и решение</h2><p class="hint">Автоиндикатор: ${stChip(rs.ind[0], rs.ind[1])}</p><div class="grid2">
     <label class="f"><span>Рекомендация</span><select class="inp" data-concl="decision"><option value=""></option>${opts(S.lists.decision, C.concl.decision)}</select></label>
     <label class="f"><span>Статус</span><select class="inp" data-concl="status">${opts(["Черновик", "На проверке", "Утверждено"], C.concl.status)}</select></label></div>
-    <label class="f" style="margin-top:12px"><span>Выводы аналитика</span><textarea class="inp" data-concl="text">${esc(C.concl.text)}</textarea></label>
+    <label class="f" style="margin-top:12px"><span>Выводы кредитного менеджера</span><textarea class="inp" data-concl="text">${esc(C.concl.text)}</textarea></label>
     <label class="f" style="margin-top:12px"><span>Условия / ковенанты</span><textarea class="inp" data-concl="conditions" style="min-height:70px">${esc(C.concl.conditions)}</textarea></label></section>
   <section class="panel" id="conclDoc">${conclusionHTML(false)}</section>`;
 }
@@ -405,7 +405,7 @@ function pageMap() {
     <label class="f"><span>Предыдущий период из второй колонки формы</span><select class="inp" data-set="prev"><option value="0"${!st.prev ? " selected" : ""}>Не загружать</option><option value="1"${st.prev ? " selected" : ""}>Загружать, если ячейки пусты</option></select></label></div>
     <p class="hint" style="margin-top:12px">Анализатор считает в тыс. тг. При автоматическом режиме единицы файла определяются по масштабу других периодов компании или по величине чисел, и значения сразу приводятся к тыс. тг; в журнале видно, что было сделано.</p>
     <p class="hint">Синтаксис кодов: 010 — как в форме; *011 — по модулю; -025 — вычесть по модулю; !200 — вычесть со знаком; #текст — строка «в том числе» без кода, название которой содержит текст. Коды 010 и 10 — одно и то же.</p></section>
-  <section class="panel"><h2>Справочник ОКЭД</h2><p class="hint">${Object.keys(OKED).length ? `Загружен: ${nf0.format(Object.keys(OKED).length)} кодов. Хранится в этом браузере и действует для всех клиентов.` : "Не загружен — по коду подставляется только название раздела (2 знака)."} Загрузите классификатор ОКЭД в Excel (.xlsx), например с сайта Бюро национальной статистики: колонки кода и наименования найдутся сами.</p>
+  <section class="panel"><h2>Справочник ОКЭД</h2><p class="hint">${Object.keys(OKED).length ? `Загружен: ${nf0.format(Object.keys(OKED).length)} кодов. Хранится в этом браузере и действует для всех клиентов.` : "Не загружен — по коду подставляется только название раздела (2 знака)."} Загрузите классификатор ОКЭД в Excel (.xlsx или .xls), например с сайта Бюро национальной статистики: колонки кода и наименования найдутся сами.</p>
     <button class="btn" data-act="okedfile">${Object.keys(OKED).length ? "Обновить справочник ОКЭД" : "Загрузить справочник ОКЭД"}</button></section>
   <div class="tablewrap"><table class="data"><thead><tr><th class="lab">Строка анализатора</th><th style="text-align:left">Полная форма</th><th style="text-align:left">Форма МСБ</th><th style="text-align:left">Свой вариант</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
@@ -451,10 +451,10 @@ async function askUnits(fname, mx, guess) {
 async function importDialog() {
   const persOpts = C.periods.map((p, i) => `<option value="${p.id}"${i === C.periods.length - 1 ? " selected" : ""}>${esc(p.label)}</option>`).join("");
   const compsOpts = C.companies.map((x, i) => `<option value="${i + 1}"${COMP_TAB === i + 1 ? " selected" : ""}>К${i + 1} · ${esc(x.name || "без названия")}</option>`).join("");
-  const body = `<p class="muted">Баланс, ОПиУ и ОДДС в Excel (.xlsx, .xlsm) — можно сразу несколько файлов одной компании за один период. Файлы читаются здесь же, в браузере, и никуда не отправляются.</p>
+  const body = `<p class="muted">Баланс, ОПиУ и ОДДС в Excel (.xlsx, .xlsm, .xls) — можно сразу несколько файлов одной компании за один период. Файлы читаются здесь же, в браузере, и никуда не отправляются.</p>
     <div class="grid2" style="margin:12px 0"><label class="f"><span>Компания</span><select class="inp" id="iComp">${compsOpts}</select></label><label class="f"><span>Период</span><select class="inp" id="iPer">${persOpts}</select></label></div>
     <p class="small muted" style="margin-top:6px">PDF деклараций, выписок и справок банков тоже можно перетащить сюда — они попадут на страницы «Налоги» и «Банк».</p>
-    <label class="drop" id="iDrop"><input type="file" id="iFiles" multiple accept=".xlsx,.xlsm,.pdf" style="display:none"><span id="iTxt">Перетащите файлы сюда или нажмите, чтобы выбрать</span></label>`;
+    <label class="drop" id="iDrop"><input type="file" id="iFiles" multiple accept=".xlsx,.xlsm,.xls,.pdf" style="display:none"><span id="iTxt">Перетащите файлы сюда или нажмите, чтобы выбрать</span></label>`;
   let files = [];
   setTimeout(() => {
     const inp = $("#iFiles"), drop = $("#iDrop"), set = fl => { files = Array.from(fl); $("#iTxt").textContent = files.map(f => f.name).join(", ") || "Файлы не выбраны"; };
@@ -519,7 +519,7 @@ document.addEventListener("click", async e => {
     case "addperfirst": { const f = C.periods[0], y = parseInt(f?.date?.slice(0, 4) || new Date().getFullYear(), 10) - 1; C.periods.unshift({ id: uid(), label: String(y), date: `${y}-12-31`, basis: "Годовой", months: 12 }); touch(); render(); break; }
     case "importdlg": importDialog(); break;
     case "addoked": if (C.card.oked.length < MAX_OKED) C.card.oked.push({ code: "", name: "" }); touch(); render(); break;
-    case "okedfile": { const inp = document.createElement("input"); inp.type = "file"; inp.accept = ".xlsx,.xlsm"; inp.onchange = async () => { try { const n = await loadOkedFile(inp.files[0]); toast("Справочник ОКЭД загружен: " + nf0.format(n) + " кодов"); render(); } catch (err) { toast("Не удалось загрузить справочник: " + err.message); } }; inp.click(); break; }
+    case "okedfile": { const inp = document.createElement("input"); inp.type = "file"; inp.accept = ".xlsx,.xlsm,.xls"; inp.onchange = async () => { try { const n = await loadOkedFile(inp.files[0]); toast("Справочник ОКЭД загружен: " + nf0.format(n) + " кодов"); render(); } catch (err) { toast("Не удалось загрузить справочник: " + err.message); } }; inp.click(); break; }
     case "addloan": { const f = fcParams(); f.loans = f.loans || []; if (!f.loans.length) { const d = ratio(C.obj, "debt", lastPid()); if (isNum(d) && d > 0) f.loans.push({ name: "Долг по балансу", bal: d, rate: f.aggRate, rem: f.aggTerm, scheme: "Дифференцированный", grace: 0 }); else f.loans.push({ name: "", bal: 0, rate: 0.16, rem: 36, scheme: "Дифференцированный", grace: 0 }); } else f.loans.push({ name: "", bal: 0, rate: 0.16, rem: 36, scheme: "Дифференцированный", grace: 0 }); touch(); render(); break; }
     case "addproj": { const f = fcParams(); f.projects = f.projects || []; f.projects.push({ name: "", amt: 0, start: 3, dur: 3, own: 0.3 }); touch(); render(); break; }
     case "word": exportWord(); break;

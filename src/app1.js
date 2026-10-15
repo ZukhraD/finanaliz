@@ -111,7 +111,7 @@ function newClient(name) {
 }
 function demoClient() {
   const d = S.demo, c = newClient(d.name);
-  c.card.activity = d.activity; c.card.oked = [{ code: "46.21.0", name: "" }, { code: "10.61.0", name: "" }, { code: "52.10.0", name: "" }]; c.card.analyst = "Аналитик (пример)"; c.card.amount = 300000;
+  c.card.activity = d.activity; c.card.oked = [{ code: "46.21.0", name: "" }, { code: "10.61.0", name: "" }, { code: "52.10.0", name: "" }]; c.card.analyst = "Кредитный менеджер (пример)"; c.card.amount = 300000;
   c.companies = d.companies.map(x => ({ ...x }));
   c.periods = d.periods.map(p => ({ ...p }));
   c.data = JSON.parse(JSON.stringify(d.data));
@@ -293,7 +293,7 @@ function elimChecks(pid) {
   const tol = N(C.card.tol) || 1;
   return [["Внутригрупповые суммы: активы = обязательства + капитал", Math.abs(assets - le) <= tol ? "ok" : "bad", assets - le],
     ["Встречность: внутригрупповая ДЗ = КЗ", Math.abs(e("e_ar") - e("e_ap")) <= tol ? "ok" : "bad", e("e_ar") - e("e_ap")],
-    ["Внутригрупповые суммы подтверждены аналитиком", C.elimOk?.[pid] ? "ok" : "bad"]];
+    ["Внутригрупповые суммы подтверждены кредитным менеджером", C.elimOk?.[pid] ? "ok" : "bad"]];
 }
 function missingInputs(k, pid) {
   return INPUT_KEYS.filter(key => LINE[key].typ === "in" && LINE[key].block !== "cf" && rawComp(k, key, pid) === null).length;

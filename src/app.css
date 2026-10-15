@@ -387,3 +387,7 @@ table.data.top th.lab, table.data.top td.lab { min-width: 180px; }
 .chart .br { fill: var(--blue); } .chart .bg { fill: var(--lime); } .chart .lg { font-size: 11px; fill: #272727; }
 table.data.norms td.cell input { min-width: 90px; }
 table.data.form select[data-f="basis"] { min-width: 190px; }
+/* окна загрузки: зона «перетащите файлы» — отдельным блоком, текст над ней не перекрывается */
+.drop { display: block; margin-top: 12px; padding: 26px 18px; cursor: pointer; }
+dialog .db { max-height: 76vh; }
+dialog { width: min(720px, 94vw); }

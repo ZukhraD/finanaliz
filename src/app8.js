@@ -350,10 +350,9 @@ async function readDoc(file) {
     if (r.pdf.noText) throw new Error("в PDF нет текста — это скан или картинка. Введите суммы вручную");
     return r;
   }
-  if (/\.(xlsx|xlsm)$/i.test(file.name)) return DocParse.readSheets(await readWorkbook(await file.arrayBuffer()));
+  if (/\.(xlsx|xlsm|xls)$/i.test(file.name)) return DocParse.readSheets(await readWorkbook(await file.arrayBuffer()));
   if (/\.csv$/i.test(file.name)) return DocParse.readSheets(csvSheets(await file.arrayBuffer()));
-  if (/\.xls$/i.test(file.name)) throw new Error("старый формат .xls не читается — откройте файл в Excel и сохраните как .xlsx");
-  throw new Error("поддерживаются PDF, Excel (.xlsx, .xlsm) и CSV");
+  throw new Error("поддерживаются PDF, Excel (.xlsx, .xlsm, .xls) и CSV");
 }
 async function importDocs(files, kDef, mode) {
   ensureDocs();
@@ -631,7 +630,7 @@ document.addEventListener("click", async e => {
   const d = t.dataset;
   if (d.act === "docdlg") { docDialog(d.mode || "bank"); return; }
   if (d.act === "fxfile") {
-    const inp = document.createElement("input"); inp.type = "file"; inp.accept = ".xlsx,.xlsm,.csv";
+    const inp = document.createElement("input"); inp.type = "file"; inp.accept = ".xlsx,.xlsm,.xls,.csv";
     inp.onchange = async () => { try { const n = await loadFxFile(inp.files[0]); toast("Загружено курсов: " + nf0.format(n)); render(); } catch (err) { toast("Не удалось загрузить курсы: " + err.message); } };
     inp.click(); return;
   }

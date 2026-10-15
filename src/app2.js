@@ -34,7 +34,113 @@ async function unzip(buf) {
 const xmlDoc = s => new DOMParser().parseFromString(s, "application/xml");
 const tags = (node, name) => Array.from(node.getElementsByTagNameNS("*", name));
 function colNum(ref) { let c = 0; for (const ch of ref) { if (ch >= "A" && ch <= "Z") c = c * 26 + ch.charCodeAt(0) - 64; else break; } return c; }
+/* ---------- старый формат Excel 97–2003 (.xls): контейнер OLE2 + записи BIFF8 */
+function readXls(buf) {
+  const b = new Uint8Array(buf), dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  const u16 = o => dv.getUint16(o, true), u32 = o => dv.getUint32(o, true), i32 = o => dv.getInt32(o, true);
+  // --- контейнер OLE2 (Compound File)
+  const ss = 1 << u16(30), mss = 1 << u16(32), nFat = u32(44), dirStart = u32(48), miniCut = u32(56), miniFatStart = u32(60), difStart = u32(68);
+  const sec = n => 512 + n * ss;
+  const fatSecs = [];
+  for (let i = 0; i < 109 && fatSecs.length < nFat; i++) { const v = u32(76 + i * 4); if (v < 0xFFFFFFFA) fatSecs.push(v); }
+  for (let d = difStart, guard = 0; d < 0xFFFFFFFA && fatSecs.length < nFat && guard < 10000; guard++) {
+    for (let i = 0; i < ss / 4 - 1 && fatSecs.length < nFat; i++) { const v = u32(sec(d) + i * 4); if (v < 0xFFFFFFFA) fatSecs.push(v); }
+    d = u32(sec(d) + ss - 4);
+  }
+  const fat = []; for (const f of fatSecs) for (let i = 0; i < ss / 4; i++) fat.push(u32(sec(f) + i * 4));
+  const chain = (start, f) => { const out = []; for (let s = start, g = 0; s < 0xFFFFFFFA && g < 1e6; g++) { out.push(s); s = f[s]; } return out; };
+  const readChain = (start, size) => { const out = new Uint8Array(chain(start, fat).length * ss); let p = 0; for (const s of chain(start, fat)) { out.set(b.subarray(sec(s), sec(s) + ss), p); p += ss; } return size !== undefined ? out.subarray(0, size) : out; };
+  const dir = readChain(dirStart), ents = [];
+  const ddv = new DataView(dir.buffer, dir.byteOffset, dir.byteLength);
+  for (let o = 0; o + 128 <= dir.length; o += 128) {
+    const nl = ddv.getUint16(o + 64, true); let name = ""; for (let i = 0; i < Math.max(0, nl / 2 - 1); i++) name += String.fromCharCode(ddv.getUint16(o + i * 2, true));
+    ents.push({ name, type: dir[o + 66], start: ddv.getUint32(o + 116, true), size: ddv.getUint32(o + 120, true) });
+  }
+  const root = ents[0], wbE = ents.find(e => e.type === 2 && /^(workbook|book)$/i.test(e.name));
+  if (!wbE) throw new Error("в файле .xls нет книги Excel");
+  let W;
+  if (wbE.size < miniCut) {
+    const mini = readChain(root.start), mfat = [], mf = readChain(miniFatStart);
+    for (let i = 0; i + 4 <= mf.length; i += 4) mfat.push(new DataView(mf.buffer, mf.byteOffset).getUint32(i, true));
+    W = new Uint8Array(chain(wbE.start, mfat).length * mss); let p = 0;
+    for (const s of chain(wbE.start, mfat)) { W.set(mini.subarray(s * mss, s * mss + mss), p); p += mss; }
+    W = W.subarray(0, wbE.size);
+  } else W = readChain(wbE.start, wbE.size);
+  // --- записи BIFF
+  const wv = new DataView(W.buffer, W.byteOffset, W.byteLength);
+  const recs = []; for (let o = 0; o + 4 <= W.length;) { const t = wv.getUint16(o, true), l = wv.getUint16(o + 2, true); recs.push({ t, o: o + 4, l }); o += 4 + l; }
+  const bof = recs[0]; if (!bof || (bof.t !== 0x809)) throw new Error("файл .xls не распознан");
+  if (wv.getUint16(bof.o, true) !== 0x600) throw new Error("файл в формате Excel 95 или старее — откройте его в Excel и сохраните как .xlsx");
+  if (recs.some(r => r.t === 0x2F)) throw new Error("файл .xls защищён паролем — снимите защиту и сохраните заново");
+  const dec1252 = new TextDecoder("windows-1252");
+  // строка XLUnicodeString; parts — куски данных (запись + CONTINUE), строка может переходить между ними
+  function strReader(parts) {
+    let pi = 0, off = 0;
+    const need = () => { while (pi < parts.length && off >= parts[pi].length) { pi++; off = 0; } };
+    const byte = () => { need(); return parts[pi][off++]; };
+    const u16r = () => byte() | (byte() << 8), u32r = () => (u16r() | (u16r() << 16)) >>> 0;
+    const skip = n => { while (n > 0) { need(); if (pi >= parts.length) return; const k = Math.min(n, parts[pi].length - off); off += k; n -= k; } };
+    const str = (cch, flags) => {
+      let hi = flags & 1, s = "";
+      const rich = flags & 8 ? u16r() : 0, ext = flags & 4 ? u32r() : 0;
+      while (s.length < cch) {
+        need(); if (pi >= parts.length) break;
+        if (off === 0 && pi > 0 && s.length > 0 && parts[pi]._cont && !parts[pi]._used) { parts[pi]._used = true; hi = byte() & 1; }
+        const left = cch - s.length, avail = parts[pi].length - off, n = Math.min(left, hi ? Math.floor(avail / 2) : avail);
+        if (n <= 0) { off = parts[pi].length; continue; }
+        if (hi) { for (let i = 0; i < n; i++) s += String.fromCharCode(parts[pi][off + i * 2] | (parts[pi][off + i * 2 + 1] << 8)); off += n * 2; }
+        else { s += dec1252.decode(parts[pi].subarray(off, off + n)); off += n; }
+      }
+      skip(rich * 4 + ext);
+      return s;
+    };
+    return { byte, u16: u16r, u32: u32r, str, xstr: () => { const c = u16r(), f = byte(); return str(c, f); } };
+  }
+  // общие строки (SST)
+  const sst = [];
+  for (let i = 0; i < recs.length; i++) {
+    if (recs[i].t !== 0xFC) continue;
+    const parts = [W.subarray(recs[i].o, recs[i].o + recs[i].l)];
+    for (let j = i + 1; j < recs.length && recs[j].t === 0x3C; j++) { const p = W.subarray(recs[j].o, recs[j].o + recs[j].l); p._cont = true; parts.push(p); }
+    const r = strReader(parts); r.u32(); const n = r.u32();
+    for (let k = 0; k < n; k++) { try { sst.push(r.xstr()); } catch (e) { break; } }
+    break;
+  }
+  const sheetsMeta = [];
+  for (const r of recs) if (r.t === 0x85) {
+    const pos = wv.getUint32(r.o, true), hid = W[r.o + 4], typ = W[r.o + 5], cch = W[r.o + 6], fl = W[r.o + 7];
+    const name = fl & 1 ? Array.from({ length: cch }, (_, i) => String.fromCharCode(wv.getUint16(r.o + 8 + i * 2, true))).join("") : dec1252.decode(W.subarray(r.o + 8, r.o + 8 + cch));
+    if (typ === 0) sheetsMeta.push({ pos, name, hidden: hid !== 0 });
+  }
+  const rk = v => { let n; if (v & 2) n = v >> 2; else { const t = new DataView(new ArrayBuffer(8)); t.setUint32(4, v & 0xFFFFFFFC, true); t.setUint32(0, 0, true); n = t.getFloat64(0, true); } return v & 1 ? n / 100 : n; };
+  const sheets = [];
+  for (const sm of sheetsMeta) {
+    const rows = [], put = (r, c, v) => { if (v === null || v === undefined || v === "") return; (rows[r + 1] = rows[r + 1] || [])[c + 1] = v; };
+    let i = recs.findIndex(r => r.o - 4 === sm.pos); if (i < 0) continue;
+    let pendingStr = null;
+    for (i = i + 1; i < recs.length && recs[i].t !== 0x0A; i++) {
+      const { t, o, l } = recs[i];
+      if (t === 0xFD) put(wv.getUint16(o, true), wv.getUint16(o + 2, true), sst[wv.getUint32(o + 6, true)]);
+      else if (t === 0x203) put(wv.getUint16(o, true), wv.getUint16(o + 2, true), wv.getFloat64(o + 6, true));
+      else if (t === 0x27E) put(wv.getUint16(o, true), wv.getUint16(o + 2, true), rk(wv.getUint32(o + 6, true)));
+      else if (t === 0xBD) { const r = wv.getUint16(o, true), c1 = wv.getUint16(o + 2, true), n = (l - 6) / 6; for (let k = 0; k < n; k++) put(r, c1 + k, rk(wv.getUint32(o + 4 + k * 6 + 2, true))); }
+      else if (t === 0x204) { const parts = [W.subarray(o + 6, o + l)]; put(wv.getUint16(o, true), wv.getUint16(o + 2, true), strReader(parts).xstr()); }
+      else if (t === 0x06) {
+        const r = wv.getUint16(o, true), c = wv.getUint16(o + 2, true);
+        if (wv.getUint16(o + 12, true) === 0xFFFF) { const k = W[o + 6]; if (k === 0) pendingStr = [r, c]; else if (k === 1) put(r, c, !!W[o + 8]); }
+        else put(r, c, wv.getFloat64(o + 6, true));
+      }
+      else if (t === 0x207 && pendingStr) { const parts = [W.subarray(o, o + l)]; for (let j = i + 1; j < recs.length && recs[j].t === 0x3C; j++) { const p = W.subarray(recs[j].o, recs[j].o + recs[j].l); p._cont = true; parts.push(p); } put(pendingStr[0], pendingStr[1], strReader(parts).xstr()); pendingStr = null; }
+      else if (t === 0x205) { if (!W[o + 7]) put(wv.getUint16(o, true), wv.getUint16(o + 2, true), !!W[o + 6]); }
+    }
+    sheets.push({ name: sm.name, hidden: sm.hidden, rows });
+  }
+  if (!sheets.length) throw new Error("в файле .xls не найдено листов");
+  return sheets;
+}
+const isXls = buf => { const u = new Uint8Array(buf, 0, 4); return u[0] === 0xD0 && u[1] === 0xCF && u[2] === 0x11 && u[3] === 0xE0; };
 async function readWorkbook(buf) {
+  if (isXls(buf)) return readXls(buf);
   const z = await unzip(buf);
   if (!z.has("xl/workbook.xml")) throw new Error("в файле нет книги Excel (xl/workbook.xml)");
   const wb = xmlDoc(await z.text("xl/workbook.xml"));
@@ -166,7 +272,7 @@ async function importFiles(files, k, pid, askUnits) {
   const report = [];
   const pp = prevPid(pid);
   for (const file of files) {
-    if (!/\.(xlsx|xlsm)$/i.test(file.name)) { report.push({ file: file.name, err: "формат не поддерживается — сохраните файл как .xlsx (Файл → Сохранить как)" }); continue; }
+    if (!/\.(xlsx|xlsm|xls)$/i.test(file.name)) { report.push({ file: file.name, err: "формат не поддерживается — нужен Excel (.xlsx, .xlsm, .xls)" }); continue; }
     let sheets;
     try { sheets = await readWorkbook(await file.arrayBuffer()); } catch (e) { report.push({ file: file.name, err: "не удалось прочитать: " + e.message }); continue; }
     const parsed = [];

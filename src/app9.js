@@ -331,9 +331,9 @@ function conclusionHTML(forWord, imgs) {
   h += `${H2("Риски")}<p>Автоиндикатор: <b>${esc(rs.ind[1])}</b>. Показателей в норме: ${rs.cnt.ok}, требуют проверки: ${rs.cnt.chk}, в зоне риска: ${rs.cnt.risk}, критических: ${rs.cnt.crit}; расхождений в сверках: ${rs.disc}.</p>
     ${risks.length ? `<ul>${risks.map(p => `<li><b>${p.sev === "crit" ? "Критично" : "Риск"}:</b> ${esc(p.title)}${p.detail ? " — " + esc(p.detail) : ""}</li>`).join("")}</ul>` : "<p>Существенных рисков не выявлено.</p>"}`;
   // 8–9. выводы и рекомендация
-  h += `${H2("Выводы аналитика")}<p class="concl-text">${esc(C.concl.text || "—")}</p>
+  h += `${H2("Выводы кредитного менеджера")}<p class="concl-text">${esc(C.concl.text || "—")}</p>
   ${H2("Рекомендация")}<p><b>${esc(C.concl.decision || "не выбрана")}</b></p>${C.concl.conditions ? `<p class="concl-text">${esc(C.concl.conditions)}</p>` : ""}
-  <p class="small muted" style="margin-top:18px">Аналитик: ${esc(c.analyst || "—")}. Дата: ${esc(c.date || "")}. Статус: ${esc(C.concl.status)}. Суммы — в тыс. тг. Автоиндикатор не заменяет решение аналитика.</p>`;
+  <p class="small muted" style="margin-top:18px">Кредитный менеджер: ${esc(c.analyst || "—")}. Дата: ${esc(c.date || "")}. Статус: ${esc(C.concl.status)}. Суммы — в тыс. тг. Автоиндикатор не заменяет решение кредитного менеджера.</p>`;
   return h;
 }
 async function svgPng(svg) {
