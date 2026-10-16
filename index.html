@@ -3770,7 +3770,7 @@ function pageTrust() {
   const k = COMP_TAB > nComp() ? 1 : COMP_TAB, s = trustSummary(k), t = s.t;
   const opt = (id, cur) => `<select class="inp tst ${cur}" data-trust="${id}">${Object.entries(TST).map(([v, l]) => `<option value="${v}"${cur === v ? " selected" : ""}>${l}</option>`).join("")}</select>`;
   return `<div class="pagehead"><div class="lead"><h1>Благонадёжность</h1><p>Проверка компании по официальным реестрам и сервисам проверки контрагентов. Загрузите отчёт из «Параграфа» (PRG.Tekser) или аналогичного сервиса в PDF, HTML или Excel — сайт найдёт в нём факторы риска и предложит отметки. Отчёт читается в этом браузере и никуда не отправляется. Кнопка «Подтянуть по БИН» сама загружает открытую страницу компании на ba.prg.kz (наружу уходит только БИН) и заполняет регистрационные данные и проверки КГД, госзакупок и Минюста.</p></div>
-    <div class="toolbar"><button class="btn" data-binlookup="${k - 1}">Подтянуть по БИН</button><button class="btn primary" data-act="trustdlg">Загрузить отчёт</button></div></div>
+    <div class="toolbar"><button class="btn" data-binlookup="${k - 1}">Подтянуть по БИН</button><button class="btn ghost" data-act="afmcheck">Сверить с перечнем АФМ</button><button class="btn primary" data-act="trustdlg">Загрузить отчёт</button></div></div>
   ${compTabs()}<div id="probBanner" data-page="trust">${bannerHTML("trust")}</div>
   <section class="panel"><h2>${esc(compName(k))}</h2>
     <div class="chips" style="margin-bottom:12px">${stChip(s.crit ? "crit" : "ok", "Стоп-факторы: " + s.crit)} ${stChip(s.risk ? "risk" : "ok", "Риски: " + s.risk)} ${stChip(s.chk ? "chk" : "ok", "Проверить: " + s.chk)} ${stChip(s.na ? "nd" : "ok", "Не проверено: " + s.na)}</div>
@@ -3921,7 +3921,19 @@ function prgParse(j) {
   { const i = at(/^юридический\s+адрес$/i); if (i >= 0) p.address = (L.slice(i + 1, i + 4).find(l => /^рус\s/i.test(l)) || L[i + 1] || "").replace(/^рус\s+/i, ""); }
   p.vat = next(/^плательщик\s+ндс$/i); p.regime = next(/^вид\s+налогового\s+режима$/i);
   p.taxes = []; { const i = at(/^сумма\s+налоговых\s+отчислений$/i); if (i >= 0) for (let n = i + 1; n < Math.min(L.length, i + 80) && !/^(показать|история)/i.test(L[n]); n++) { const y = /^(\d{4})\s*г\.?$/.exec(L[n]); if (y) { const v = parseNum((L[n + 1] || "").replace(/[₸\s]/g, "").replace(",", ".")); if (isNum(v)) p.taxes.push({ y: +y[1], v }); } } }
-  p.debt = null; { const i = at(/^всего\s+задолженностей/i); if (i >= 0) for (let n = i + 1; n < Math.min(L.length, i + 40) && !/^благонадежность\s+предприятия$/i.test(L[n]); n++) { const m = /^(-?[\d\s]+[.,]\d{2})\s*₸$/.exec(L[n]); if (m) { const v = +m[1].replace(/\s/g, "").replace(",", "."); p.debt = Math.max(p.debt ?? 0, v); } } }
+  p.debt = null; p.debtFull = null;
+  { const i = at(/^всего\s+задолженностей/i); let src = "";
+    if (i >= 0) for (let n = i + 1; n < Math.min(L.length, i + 40) && !/^благонадежность\s+предприятия$/i.test(L[n]); n++) {
+      const m = /^(-?[\d\s]+[.,]\d{2})\s*₸$/.exec(L[n]);
+      if (!m) { if (!/^дата\s+сверки/i.test(L[n])) src = L[n]; continue; }
+      const v = +m[1].replace(/\s/g, "").replace(",", ".");
+      p.debt = Math.max(p.debt ?? 0, v);
+      if (/сведени\S*\s+об\s+отсутствии/i.test(src)) p.debtFull = Math.max(p.debtFull ?? 0, v);
+    } }
+  // массовость: блок «Смежные предприятия» — «С похожим адресом N», «По ФИО руководителя N»
+  { const z = L.find(l => /похожим\s+адресом\s+\d+|по\s+фио\s+руководителя\s+\d+/i.test(l)) || "";
+    const a = /похожим\s+адресом\s+(\d+)/i.exec(z), d = /по\s+фио\s+руководителя\s+(\d+)/i.exec(z);
+    p.sameAddr = a ? +a[1] : (z ? 0 : null); p.sameDir = d ? +d[1] : (z ? 0 : null); }
   // благонадёжность: «Список налогоплательщиков, … Нет» + «Проверено: дата»
   const items = {}, hits = [];
   const s0 = L.findIndex((l, n) => /^благонадежность\s+предприятия$/i.test(low(l)) && /нарушени/i.test(L[n + 1] || ""));
@@ -3938,6 +3950,27 @@ function prgParse(j) {
   }
   if (isNum(p.debt) && p.debt > 0) { items.taxdebt = { st: "yes", note: `ВЫЯВЛЕНО: налоговая задолженность ${nf0.format(p.debt)} тг (Параграф)` }; hits.push(`налоговая задолженность ${nf0.format(p.debt)} тг`); }
   else if (isNum(p.debt) && !items.taxdebt) items.taxdebt = { st: "no", note: "задолженность 0 тг (Параграф)" };
+  // пенсионные и социальные: «Сведения об отсутствии (наличии) задолженности» КГД включают ОПВ, СО и ОСМС
+  if (isNum(p.debtFull)) {
+    if (p.debtFull > 0) { items.pension = { st: "yes", note: `ВЫЯВЛЕНО: задолженность ${nf0.format(p.debtFull)} тг по сведениям КГД (налоги и/или ОПВ, СО, ОСМС) — уточните разбивку` }; hits.push(`задолженность по сведениям КГД ${nf0.format(p.debtFull)} тг (в т.ч. возможно ОПВ/СО/ОСМС)`); }
+    else items.pension = { st: "no", note: "нет: по сведениям КГД задолженности по налогам, ОПВ, СО и ОСМС нет (Параграф)" };
+  }
+  // массовый адрес / руководитель
+  if (isNum(p.sameAddr) || isNum(p.sameDir)) {
+    const c = TCFG(), ma = isNum(p.sameAddr) && p.sameAddr > c.addr, md = isNum(p.sameDir) && p.sameDir > c.dir;
+    const txt = `по похожему адресу ${p.sameAddr ?? "—"} компаний (порог ${c.addr}), у руководителя ${p.sameDir ?? "—"} (порог ${c.dir})`;
+    items.mass = ma || md ? { st: "yes", note: "ВЫЯВЛЕНО: " + txt + " (Параграф)" } : { st: "no", note: "нет: " + txt + " (Параграф)" };
+    if (ma || md) hits.push((ma ? "массовый адрес" : "") + (ma && md ? ", " : "") + (md ? "массовый руководитель" : "") + ` (${txt})`);
+  }
+  // ликвидация, реорганизация
+  if (!items.status || items.status.st !== "yes") {
+    const aboutI = at(/^о\s+компании\s/i), endTop = (() => { let n = -1; L.forEach((l, j) => { if (/^смежные\s+предприятия$/i.test(l)) n = j; }); return n > 0 ? n : L.length; })();
+    const zone = L.slice(0, endTop).concat(aboutI >= 0 ? L.slice(aboutI, aboutI + 4) : []).filter(l => !/^(\d{5}\s|окэд:|основной\s+окэд|вторичн)/i.test(l));
+    const STRE = /(ликвидирован|стади\S*\s+ликвидац|процесс\S*\s+ликвидац|ликвидационн|реорганизован|стади\S*\s+реорганизац|прекратил\S*\s+деятельност|деятельност\S*\s+прекращен|снят\S*\s+с\s+(регистрационного\s+)?(учет|регистрац)|исключен\S*\s+из\s+реестр|недействующ)/i;
+    const hit = zone.find(l => STRE.test(l));
+    if (hit) { items.status = { st: "yes", note: "ВЫЯВЛЕНО: " + hit.slice(0, 120) + " (Параграф)" }; hits.push("ликвидация / реорганизация: " + hit.slice(0, 80)); }
+    else if (p.regDate && p.director) items.status = { st: "no", note: "нет: признаков ликвидации или реорганизации на странице Параграфа нет" };
+  }
   p.items = items; p.hits = [...new Set(hits)];
   return p;
 }
@@ -3965,6 +3998,7 @@ async function binLookup(i) {
   if (p.regime) { const rg = /общеустанов/i.test(p.regime) ? "Общеустановленный" : /упрощ/i.test(p.regime) ? "Упрощённая декларация" : "Иной специальный режим"; if (S.lists.regime.includes(rg)) { x.regime = rg; done.push("налоговый режим"); } }
   if (i === 0 && p.okedCode) { const codes = [p.okedCode, ...p.secondOkeds].slice(0, MAX_OKED); C.card.oked = codes.map((c, n) => ({ code: okedFmt(okedDigits(c)), name: (n === 0 && p.okedName) || okedLookup(c)?.name || "" })); done.push("ОКЭД"); }
   for (const [id, it] of Object.entries(p.items)) t.items[id] = it;
+  const afm = afmCheck(k, p.name); if (afm) { t.items.terror = afm; if (afm.st === "yes") p.hits.push(afm.note.replace(/^ВЫЯВЛЕНО:\s*/, "")); }
   t.prg = { url: p.url, date: isoToday(), krp: p.krp, kse: p.kse, kfs: p.kfs, vat: p.vat, regime: p.regime, taxes: p.taxes, debt: p.debt };
   t.date = isoToday(); t.source = "Параграф (ba.prg.kz)"; t.src = (t.src || []).concat({ file: "ba.prg.kz", t: Date.now() });
   const nChk = Object.keys(p.items).length;
@@ -3975,7 +4009,7 @@ async function binLookup(i) {
     `<p><b>${esc(p.name || x.name)}</b> · БИН ${esc(bin)}</p>
     ${p.hits.length ? `<p style="color:#b42318"><b>Выявлено:</b> ${esc(p.hits.join("; "))}.</p>` : `<p style="color:#067647"><b>Нарушений не выявлено</b> по ${nChk} проверкам Параграфа.</p>`}
     <p class="small">Заполнено: ${esc(done.join(", ") || "—")}. ${p.krp ? "Размерность: " + esc(p.krp) + "." : ""}</p>${taxes}
-    <p class="small muted">Источник: <a href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">страница компании на ba.prg.kz</a>. Судебные дела и госзакупки откройте там на вкладках — они в автоматическую проверку не входят. Пункты «Благонадёжности», которых нет на странице Параграфа, остались «не проверено».</p>`,
+    <p class="small muted">Источник: <a href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">страница компании на ba.prg.kz</a>. ${afm ? "" : "Перечень АФМ не загружен — пункт о терроризме и санкциях не проверен (загрузите его на странице «Настройка загрузки»). "}Суды, история изменений и степень риска КГД в автоматическую проверку не входят.</p>`,
     [{ t: "Открыть «Благонадёжность»", v: "trust" }, { t: "Готово", primary: true, v: true }]).then(v => { if (v === "trust") { PAGE = "trust"; COMP_TAB = k; render(); } });
 }
 async function binPaste(i, bin, why) {
@@ -4026,6 +4060,86 @@ async function binPaste(i, bin, why) {
 document.addEventListener("click", e => {
   const b = e.target.closest("button[data-binlookup]"); if (!b || !C) return;
   binLookup(+b.dataset.binlookup);
+});
+
+/* ---------- пороги массовости */
+const TCFG_KEY = "finkz.trustcfg.v1", TCFG_DEF = { addr: 10, dir: 5 };
+function TCFG() { try { return Object.assign({}, TCFG_DEF, JSON.parse(localStorage.getItem(TCFG_KEY) || "{}")); } catch (e) { return { ...TCFG_DEF }; } }
+function trustNormsPanel() {
+  const c = TCFG();
+  return `<section class="panel" style="margin-top:16px"><h2>Пороги благонадёжности</h2><p class="hint">По данным Параграфа («Смежные предприятия»): если компаний с похожим адресом или у того же руководителя больше порога, пункт «Массовый адрес, руководитель» получает отметку «есть».</p>
+    <div class="grid2" style="max-width:640px"><label class="f"><span>Компаний по похожему адресу, больше</span><input class="inp" data-tcfg="addr" inputmode="numeric" value="${c.addr}"></label>
+    <label class="f"><span>Компаний у руководителя, больше</span><input class="inp" data-tcfg="dir" inputmode="numeric" value="${c.dir}"></label></div></section>`;
+}
+document.addEventListener("change", e => {
+  const t = e.target; if (t.dataset.tcfg === undefined) return;
+  const v = parseNum(t.value); if (v === null || v < 0) { toast("Укажите целое число"); return; }
+  const c = TCFG(); c[t.dataset.tcfg] = Math.round(v); try { localStorage.setItem(TCFG_KEY, JSON.stringify(c)); } catch (err) { /* только до перезагрузки */ }
+  toast("Порог сохранён — применится при следующей загрузке по БИН");
+});
+
+/* ---------- перечень АФМ (терроризм, экстремизм, ФРОМУ) и другие санкционные списки — загружается файлом, сверка в браузере */
+const AFM_KEY = "finkz.afm.v1";
+let AFM = (() => { try { return JSON.parse(localStorage.getItem(AFM_KEY) || "null"); } catch (e) { return null; } })();
+const nmNorm = s => String(s || "").toUpperCase().replace(/Ё/g, "Е").replace(/[«»"'`“”().,;:№\-–—]/g, " ").replace(/\s+/g, " ").replace(/(^|\s)(ТОВАРИЩЕСТВО С ОГРАНИЧЕННОЙ ОТВЕТСТВЕННОСТЬЮ|АКЦИОНЕРНОЕ ОБЩЕСТВО|ТОО|АО|ИП|ОО|ОФ|LLP|LLC|JSC)(?=\s|$)/g, " ").replace(/\s+/g, " ").trim();
+const fioKey = s => nmNorm(s).split(" ").filter(w => /^[A-ZА-ЯӘІҢҒҮҰҚӨҺ]{2,}$/.test(w)).slice(0, 3).sort().join(" ");
+function afmParseLines(lines) {
+  const ids = new Set(), names = new Set(), orgs = new Set();
+  for (const raw of lines) {
+    const line = String(raw || ""); if (!line.trim()) continue;
+    for (const m of line.matchAll(/(?<!\d)(\d{12})(?!\d)/g)) ids.add(m[1]);
+    for (const part of line.replace(/^\s*\d+[.)]\s*/, "").split(/[;|\t]/)) {
+      const t = part.replace(/\(.*?\)/g, " ").replace(/\d{2}\.\d{2}\.\d{4}.*$/, "").replace(/(^|\s)(г\.?\s?р\.?|иин|бин|дата\s+рождения)(?=[\s:.]|$).*$/i, "").trim();
+      const w = t.split(/[\s,]+/).filter(Boolean);
+      if (/(организац|фронт|движени|джамаат|джихад|партия|государство|армия|бригад|(?:^|\s)аль[\s-]|(?:^|\s)ал-|ИГИЛ|ISIL|ISIS|компани|фонд|ТОО|LLP)/i.test(t) && t.length < 120) orgs.add(nmNorm(t));
+      else if (w.length >= 2 && w.length <= 4 && w.every(x => /^[A-Za-zА-Яа-яЁёӘәІіҢңҒғҮүҰұҚқӨөҺһ-]{2,}$/.test(x)) && w.filter(x => /^[A-ZА-ЯЁӘІҢҒҮҰҚӨҺ]/.test(x)).length >= 2) names.add(fioKey(t));
+    }
+  }
+  return { ids: [...ids], names: [...names].filter(Boolean), orgs: [...orgs].filter(x => x.length > 3) };
+}
+async function loadAfmFiles(files) {
+  let all = { ids: [], names: [], orgs: [] }; const used = [];
+  for (const f of files) {
+    let lines;
+    if (/\.(xml|txt|csv)$/i.test(f.name)) { const txt = await f.text(); lines = txt.replace(/<[^>]+>/g, "\n").replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").split(/\r?\n/); }
+    else { const r = await readDoc(f); lines = r.pdf.pages.flatMap(pg => pg.lines.map(l => l.text)); }
+    const z = afmParseLines(lines); all.ids.push(...z.ids); all.names.push(...z.names); all.orgs.push(...z.orgs); used.push(f.name);
+  }
+  all = { ids: [...new Set(all.ids)], names: [...new Set(all.names)], orgs: [...new Set(all.orgs)] };
+  if (all.names.length + all.ids.length < 5) throw new Error("в файле не найдены ФИО или ИИН/БИН — это точно перечень?");
+  AFM = { ...all, files: used, date: isoToday() };
+  try { localStorage.setItem(AFM_KEY, JSON.stringify(AFM)); } catch (e) { throw new Error("перечень слишком большой для хранения в браузере"); }
+  return AFM;
+}
+function afmCheck(k, nameOverride) {
+  if (!AFM || !C) return null; ensureTrust();
+  const x = C.companies[k - 1] || {}, t = C.trust[k], bin = String(x.bin || "").replace(/\D/g, "");
+  const ids = new Set(AFM.ids), names = new Set(AFM.names), orgs = new Set(AFM.orgs || []);
+  const found = [];
+  if (bin && ids.has(bin)) found.push("БИН/ИИН " + bin + " есть в перечне");
+  const nm = nmNorm(nameOverride || x.name); if (nm && orgs.has(nm)) found.push("наименование совпадает с организацией из перечня");
+  if (t.director && fioKey(t.director).split(" ").length >= 2 && names.has(fioKey(t.director))) found.push("ФИО руководителя " + t.director + " совпадает с лицом из перечня — сверьте дату рождения и ИИН");
+  if (x.form === "ИП" && x.name && fioKey(x.name).split(" ").length >= 2 && names.has(fioKey(x.name))) found.push("ФИО ИП совпадает с лицом из перечня");
+  const src = `перечень АФМ от ${AFM.date.split("-").reverse().join(".")}`;
+  return found.length ? { st: "yes", note: "ВЫЯВЛЕНО: " + found.join("; ") + " (" + src + ")" } : { st: "no", note: `нет: БИН${t.director ? ", ФИО руководителя" : ""} и наименование не найдены (${src})` };
+}
+function afmPanel() {
+  return `<section class="panel"><h2>Перечень АФМ и санкционные списки</h2><p class="hint">${AFM ? `Загружен ${AFM.date.split("-").reverse().join(".")}: ${nf0.format(AFM.names.length)} ФИО, ${nf0.format(AFM.ids.length)} ИИН/БИН, ${nf0.format((AFM.orgs || []).length)} организаций (${esc(AFM.files.join(", "))}).` : "Не загружен — пункт «Терроризм, экстремизм, санкции» на странице «Благонадёжность» не проверяется."} Скачайте «Перечень организаций и физических лиц, связанных с финансированием терроризма и экстремизма» на сайте АФМ (можно добавить и другие списки, например ФРОМУ) и загрузите сюда — XML, Excel, PDF, HTML или CSV. Хранится в этом браузере, сверка идёт по БИН компании, наименованию и ФИО руководителя при каждой загрузке по БИН. Обновляйте перечень раз в месяц.</p>
+    <button class="btn" data-act="afmfile">${AFM ? "Обновить перечень" : "Загрузить перечень"}</button></section>`;
+}
+document.addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.dataset.act === "afmfile") {
+    const inp = document.createElement("input"); inp.type = "file"; inp.multiple = true; inp.accept = ".xml,.xlsx,.xls,.xlsm,.pdf,.html,.htm,.csv,.txt";
+    inp.onchange = async () => { try { const a = await loadAfmFiles([...inp.files]); let n = 0;
+      if (C) { ensureTrust(); for (let k = 1; k <= C.companies.length; k++) if (C.companies[k - 1].bin || C.trust[k].director) { const r = afmCheck(k); C.trust[k].items.terror = r; if (r.st === "yes") n++; } touch(); }
+      toast(`Перечень загружен: ${nf0.format(a.names.length)} ФИО, ${nf0.format(a.ids.length)} ИИН/БИН` + (n ? ` · совпадения у ${n} компаний!` : "")); render(); } catch (err) { toast("Не удалось загрузить перечень: " + err.message); } };
+    inp.click(); return;
+  }
+  if (b.dataset.act === "afmcheck" && C) {
+    if (!AFM) { toast("Сначала загрузите перечень АФМ на странице «Настройка загрузки»"); return; }
+    const k = COMP_TAB > nComp() ? 1 : COMP_TAB, r = afmCheck(k); C.trust[k].items.terror = r; touch(); render(); toast(r.st === "yes" ? "Есть совпадение с перечнем — проверьте" : "Совпадений с перечнем нет");
+  }
 });
 
 "use strict";
@@ -4437,6 +4551,7 @@ function pageMap() {
     <p class="hint">Синтаксис кодов: 010 — как в форме; *011 — по модулю; -025 — вычесть по модулю; !200 — вычесть со знаком; #текст — строка «в том числе» без кода, название которой содержит текст. Коды 010 и 10 — одно и то же.</p></section>
   <section class="panel"><h2>Справочник ОКЭД</h2><p class="hint">${Object.keys(OKED).length ? `Загружен: ${nf0.format(Object.keys(OKED).length)} кодов. Хранится в этом браузере и действует для всех клиентов.` : "Не загружен — по коду подставляется только название раздела (2 знака)."} Загрузите классификатор ОКЭД в Excel (.xlsx или .xls), например с сайта Бюро национальной статистики: колонки кода и наименования найдутся сами.</p>
     <button class="btn" data-act="okedfile">${Object.keys(OKED).length ? "Обновить справочник ОКЭД" : "Загрузить справочник ОКЭД"}</button></section>
+  ${afmPanel()}
   <div class="tablewrap"><table class="data"><thead><tr><th class="lab">Строка анализатора</th><th style="text-align:left">Полная форма</th><th style="text-align:left">Форма МСБ</th><th style="text-align:left">НСФО (малый бизнес)</th><th style="text-align:left">Свой вариант</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 function pageLog() {
@@ -4457,7 +4572,7 @@ function pageNorms() {
     <div class="toolbar"><button class="btn ghost" data-act="normsreset">Вернуть все по умолчанию</button></div></div>
   <div class="tablewrap"><table class="data norms"><thead><tr><th class="lab">Коэффициент</th><th>Направление</th><th>Норма (зелёный)</th><th>Проверка (красный)</th><th>Критично</th><th>Ед.</th></tr></thead><tbody>
   ${keys.map(k => { const o = RATN[k] || {}, d = RAT_DEF[k]; const cell = f => `<td class="cell"><input class="inp num" data-norm="${k}" data-f="${f}" value="${esc(o[f] !== undefined ? show(k, o[f]) : "")}" placeholder="${esc(show(k, d[f]))}"></td>`;
-    return `<tr><td class="lab">${esc(RAT[k].label)}<span class="formula">${esc(RAT[k].formula || "")}</span></td><td>${esc(RAT[k].dir)}</td>${cell("green")}${cell("red")}${d.crit === null || d.crit === undefined ? "<td></td>" : cell("crit")}<td>${unit(k)}</td></tr>`; }).join("")}</tbody></table></div>`;
+    return `<tr><td class="lab">${esc(RAT[k].label)}<span class="formula">${esc(RAT[k].formula || "")}</span></td><td>${esc(RAT[k].dir)}</td>${cell("green")}${cell("red")}${d.crit === null || d.crit === undefined ? "<td></td>" : cell("crit")}<td>${unit(k)}</td></tr>`; }).join("")}</tbody></table></div>${trustNormsPanel()}`;
 }
 const PAGES = { card: pageCard, bal: () => pageForm("bal"), odr: () => pageForm("odr"), cf: () => pageForm("cf"), tax: pageTax, bank: pageBank, credit: pageCredit, coll: pageColl, trust: pageTrust, cons: pageCons, an: pageAn, prob: pageProb, concl: pageConcl, map: pageMap, log: pageLog, norms: pageNorms };
 

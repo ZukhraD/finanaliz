@@ -407,6 +407,7 @@ function pageMap() {
     <p class="hint">Синтаксис кодов: 010 — как в форме; *011 — по модулю; -025 — вычесть по модулю; !200 — вычесть со знаком; #текст — строка «в том числе» без кода, название которой содержит текст. Коды 010 и 10 — одно и то же.</p></section>
   <section class="panel"><h2>Справочник ОКЭД</h2><p class="hint">${Object.keys(OKED).length ? `Загружен: ${nf0.format(Object.keys(OKED).length)} кодов. Хранится в этом браузере и действует для всех клиентов.` : "Не загружен — по коду подставляется только название раздела (2 знака)."} Загрузите классификатор ОКЭД в Excel (.xlsx или .xls), например с сайта Бюро национальной статистики: колонки кода и наименования найдутся сами.</p>
     <button class="btn" data-act="okedfile">${Object.keys(OKED).length ? "Обновить справочник ОКЭД" : "Загрузить справочник ОКЭД"}</button></section>
+  ${afmPanel()}
   <div class="tablewrap"><table class="data"><thead><tr><th class="lab">Строка анализатора</th><th style="text-align:left">Полная форма</th><th style="text-align:left">Форма МСБ</th><th style="text-align:left">НСФО (малый бизнес)</th><th style="text-align:left">Свой вариант</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 function pageLog() {
@@ -427,7 +428,7 @@ function pageNorms() {
     <div class="toolbar"><button class="btn ghost" data-act="normsreset">Вернуть все по умолчанию</button></div></div>
   <div class="tablewrap"><table class="data norms"><thead><tr><th class="lab">Коэффициент</th><th>Направление</th><th>Норма (зелёный)</th><th>Проверка (красный)</th><th>Критично</th><th>Ед.</th></tr></thead><tbody>
   ${keys.map(k => { const o = RATN[k] || {}, d = RAT_DEF[k]; const cell = f => `<td class="cell"><input class="inp num" data-norm="${k}" data-f="${f}" value="${esc(o[f] !== undefined ? show(k, o[f]) : "")}" placeholder="${esc(show(k, d[f]))}"></td>`;
-    return `<tr><td class="lab">${esc(RAT[k].label)}<span class="formula">${esc(RAT[k].formula || "")}</span></td><td>${esc(RAT[k].dir)}</td>${cell("green")}${cell("red")}${d.crit === null || d.crit === undefined ? "<td></td>" : cell("crit")}<td>${unit(k)}</td></tr>`; }).join("")}</tbody></table></div>`;
+    return `<tr><td class="lab">${esc(RAT[k].label)}<span class="formula">${esc(RAT[k].formula || "")}</span></td><td>${esc(RAT[k].dir)}</td>${cell("green")}${cell("red")}${d.crit === null || d.crit === undefined ? "<td></td>" : cell("crit")}<td>${unit(k)}</td></tr>`; }).join("")}</tbody></table></div>${trustNormsPanel()}`;
 }
 const PAGES = { card: pageCard, bal: () => pageForm("bal"), odr: () => pageForm("odr"), cf: () => pageForm("cf"), tax: pageTax, bank: pageBank, credit: pageCredit, coll: pageColl, trust: pageTrust, cons: pageCons, an: pageAn, prob: pageProb, concl: pageConcl, map: pageMap, log: pageLog, norms: pageNorms };
 
