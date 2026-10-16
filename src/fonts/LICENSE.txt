@@ -1,0 +1,2 @@
+DejaVu Sans Condensed (подмножество) — шрифты DejaVu, свободная лицензия Bitstream Vera / Arev, разрешено встраивание и распространение.
+https://dejavu-fonts.github.io/License.html

@@ -13,8 +13,9 @@ function render() {
   if (LOCK.on && !LOCK.key) return renderLock();
   if (!C) return renderClients();
   PROB = problems();
-  const steps = [["card", "Карточка"], ["trust", "Благонадёжность"], ["bal", "Баланс"], ["odr", "ОПиУ"], ["cf", "ДДС"], ["tax", "Налоги"], ["bank", "Банк"], ["credit", "Кредитная история"], ["coll", "Залог и гаранты"], ["cons", "Свод и прогноз"], ["an", "Анализ"], ["prob", "Проблемы"], ["concl", "Заключение"]];
-  if (isOD()) steps.splice(0, steps.length, ["card", "Карточка"], ["trust", "Благонадёжность"], ["fin", "Баланс + ОПиУ"], ["bank", "Банк"], ["credit", "Кредитная история"], ["prob", "Проблемы"], ["concl", "Заключение"]);
+  const steps = [["card", "Карточка"], ["trust", "Благонадёжность"], ["bal", "Баланс"], ["odr", "ОПиУ"], ["cf", "ДДС"], ["tax", "Налоги"], ["bank", "Банк"], ["credit", "Кредитная история"], ["coll", "Залог и гаранты"], ...(nComp() > 1 ? [["cons", "Свод группы"]] : []), ["fc", "Прогноз"], ["an", "Анализ"], ["prob", "Проблемы"], ["concl", "Заключение"], ["ai", "Анализ с помощью ИИ"]];
+  if (isOD()) steps.splice(0, steps.length, ["card", "Карточка"], ["trust", "Благонадёжность"], ["fin", "Баланс + ОПиУ"], ["bank", "Банк"], ["credit", "Кредитная история"], ["prob", "Проблемы"], ["concl", "Заключение"], ["ai", "Анализ с помощью ИИ"]);
+  if (PAGE === "cons" && nComp() < 2) PAGE = "fc";
   if (!steps.some(st => st[0] === PAGE) && PAGE !== "map" && PAGE !== "log" && PAGE !== "norms" && !(isOD() && (PAGE === "bal" || PAGE === "odr"))) PAGE = "card";
   document.body.innerHTML = `
   <div class="app">
@@ -213,7 +214,7 @@ const FC_LAB = { growth: "Рост выручки, % в год", shock: "Шок 
 const fcIn = (path, v, pct) => `<input class="inp num" data-fc="${path}" ${pct ? "data-pct" : ""} value="${esc(isNum(v) ? fmt(pct ? v * 100 : v, pct ? "m1" : "m") : (v ?? ""))}">`;
 function pageCons() {
   const pers = C.periods, f = fcParams();
-  let h = `<div class="pagehead"><div class="lead"><h1>${nComp() > 1 ? "Свод группы и прогноз" : "Прогноз"}</h1><p>${nComp() > 1 ? "Группа = сумма компаний за вычетом внутригрупповых операций. Ниже сразу строится прогноз денежного потока на 24 месяца: базовый и стрессовый." : "Прогноз денежного потока на 24 месяца: базовый и стрессовый."}</p></div>
+  let h = `<div class="pagehead"><div class="lead"><h1>Свод группы</h1><p>Группа = сумма компаний за вычетом внутригрупповых операций. Прогноз по кварталам — на странице «Прогноз».</p></div>
     <div class="toolbar">${objSelect()}</div></div><div id="probBanner" data-page="cons">${bannerHTML("cons")}</div>`;
   if (nComp() > 1) {
     h += `<section class="panel"><h2>Внутригрупповые операции</h2><p class="hint">Тыс. тг. Пусто — таких операций нет. Упрощения: владение 100%, без гудвилла и налогового эффекта.</p>
@@ -230,32 +231,7 @@ function pageCons() {
       ${[["rev", "Выручка"], ["ebitda", "EBITDA"], ["ni", "Чистая прибыль"], ["ta", "Итого активы"], ["eq", "Капитал"], ["bchk", "Контроль: активы − пассивы"]].map(([k, l]) => `<tr><td class="lab">${l}</td>${pers.map(p => { const v = val(0, k, p.id); return `<td class="${isNum(v) && v < 0 ? "neg" : ""}">${fmt(v)}</td>`; }).join("")}</tr>`).join("")}
       <tr><td class="lab">Общий долг</td>${pers.map(p => `<td>${fmt(ratio(0, "debt", p.id))}</td>`).join("")}</tr></tbody></table></div></section>`;
   }
-  // прогноз: допущения
-  const loans = f.loans || [];
-  h += `<section class="panel"><h2>Прогноз: допущения</h2><p class="hint">Объект — ${esc(objName(C.obj))}; база прогноза — последний период «${esc(pers[pers.length - 1]?.label || "")}» (обороты в годовом выражении). Проценты — в %.</p>
-    <div class="fcgrid"><div><div class="tablewrap" style="max-height:none"><table class="data fc"><thead><tr><th class="lab">Допущение</th><th>База</th><th>Стресс</th></tr></thead><tbody>
-    ${Object.keys(FC_LAB).map(k => `<tr><td class="lab">${FC_LAB[k]}</td><td class="cell">${fcIn(`scen.${k}.0`, f.scen[k][0], FC_PCT.has(k))}</td><td class="cell">${fcIn(`scen.${k}.1`, f.scen[k][1], FC_PCT.has(k))}</td></tr>`).join("")}
-    </tbody></table></div></div>
-    <div><h3>Запрашиваемый кредит</h3><div class="grid2 tight">
-      <label class="f"><span>Сумма, тыс. тг</span>${fcIn("req.amt", f.req.amt)}</label><label class="f"><span>Месяц выдачи (1–24)</span>${fcIn("req.month", f.req.month)}</label>
-      <label class="f"><span>Срок, мес.</span>${fcIn("req.term", f.req.term)}</label><label class="f"><span>Льготный период по ОД, мес.</span>${fcIn("req.grace", f.req.grace)}</label>
-      <label class="f"><span>Ставка, %</span>${fcIn("req.rate", f.req.rate, true)}</label>
-      <label class="f"><span>Схема погашения</span><select class="inp" data-fc="req.scheme">${opts(Object.keys(SCH), f.req.scheme)}</select></label>
-      <label class="f"><span>Горизонт прогноза</span><select class="inp" data-fc="horizon" data-numsel>${[[0, `По сроку кредита (${fcHorizon()} мес.)`], [24, "24 мес."], [36, "36 мес."], [48, "48 мес."], [60, "60 мес."], [72, "72 мес."], [84, "84 мес."]].map(([v, t]) => `<option value="${v}"${N(f.horizon) == v ? " selected" : ""}>${t}</option>`).join("")}</select></label></div>
-      <h3 style="margin-top:16px">Сезонность выручки (1 = средний месяц) <button class="btn ghost" data-act="seasbank" title="По чистым кредитовым оборотам из выписок за последние 12–24 месяца">Из банковских оборотов</button></h3><div class="seas">${["Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"].map((m, i) => `<label class="f"><span>${m}</span>${fcIn(`seas.${i}`, f.seas[i])}</label>`).join("")}</div>
-    </div></div>
-    <h3 style="margin-top:18px">Действующие кредиты</h3>
-    ${loans.length ? "" : `<p class="hint" style="margin-top:4px">Реестр пуст — долг из баланса (${fmt(ratio(C.obj, "debt", lastPid()))} тыс. тг) гасится равными долями: ставка ${fcIn("aggRate", f.aggRate, true).replace('class="inp num"', 'class="inp num inl"')} %, срок ${fcIn("aggTerm", f.aggTerm).replace('class="inp num"', 'class="inp num inl"')} мес. Для точности добавьте кредиты по справкам банков.</p>`}
-    ${loans.length ? `<div class="tablewrap" style="max-height:none"><table class="data fc"><thead><tr><th class="lab">Кредитор</th><th>Остаток, тыс. тг</th><th>Ставка, %</th><th>Осталось, мес.</th><th>Льгота, мес.</th><th>Схема</th><th></th></tr></thead><tbody>
-      ${loans.map((l, i) => `<tr><td class="cell"><input class="inp" data-fc="loans.${i}.name" value="${esc(l.name || "")}" style="text-align:left"></td><td class="cell">${fcIn(`loans.${i}.bal`, l.bal)}</td><td class="cell">${fcIn(`loans.${i}.rate`, l.rate, true)}</td><td class="cell">${fcIn(`loans.${i}.rem`, l.rem)}</td><td class="cell">${fcIn(`loans.${i}.grace`, l.grace)}</td><td class="cell"><select class="inp" data-fc="loans.${i}.scheme">${opts(Object.keys(SCH), l.scheme)}</select></td><td><button class="btn ghost danger" data-delloan="${i}">Удалить</button></td></tr>`).join("")}
-      </tbody></table></div>` : ""}
-    <p style="margin-top:8px"><button class="btn" data-act="addloan">Добавить кредит</button></p>
-    <h3 style="margin-top:18px">Инвестиционные проекты</h3>
-    ${(f.projects || []).length ? `<div class="tablewrap" style="max-height:none"><table class="data fc"><thead><tr><th class="lab">Проект</th><th>Сумма, тыс. тг</th><th>Начало, мес.</th><th>Длительность, мес.</th><th>Собств. средства, %</th><th></th></tr></thead><tbody>
-      ${f.projects.map((p, i) => `<tr><td class="cell"><input class="inp" data-fc="projects.${i}.name" value="${esc(p.name || "")}" style="text-align:left"></td><td class="cell">${fcIn(`projects.${i}.amt`, p.amt)}</td><td class="cell">${fcIn(`projects.${i}.start`, p.start)}</td><td class="cell">${fcIn(`projects.${i}.dur`, p.dur)}</td><td class="cell">${fcIn(`projects.${i}.own`, p.own, true)}</td><td><button class="btn ghost danger" data-delproj="${i}">Удалить</button></td></tr>`).join("")}
-      </tbody></table></div>` : `<p class="hint">Проектов нет — в прогнозе только поддерживающие капвложения.</p>`}
-    <p style="margin-top:8px"><button class="btn" data-act="addproj">Добавить проект</button></p></section>
-  <section class="panel"><h2>Прогноз: результаты</h2><div id="fcOut">${fcOutHTML()}</div></section>`;
+  if (nComp() < 2) h += `<p class="hint">Свод нужен только для группы компаний. Прогноз — на странице «Прогноз».</p>`;
   return h;
 }
 function fcOutHTML() {
@@ -272,24 +248,7 @@ function fcOutHTML() {
     ${row("Месяцев ниже минимального остатка (с кредитом)", "months_below", "d", v => (v > 0 ? "v chk" : "v ok"))}
     ${row("Максимальный дефицит без кредита", "gap_max", "m")}${row("Потребность в финансировании (с резервом)", "rec", "m")}
     ${row("Рост оборотного капитала (пик)", "nwc_need", "m")}${row("Инвестиции, заёмная часть", "inv_need", "m")}</tbody></table></div>`;
-  const o = FC_TAB ? s : b;
-  // колонки: первые 24 месяца помесячно, дальше — по годам
-  const MON = ["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
-  const cols = o.rows.slice(0, 24).map(r => ({ h: String(r.t), sub: MON[r.cal - 1], rows: [r] }));
-  for (let y = 2; y * 12 < o.H; y++) { const rr = o.rows.slice(y * 12, y * 12 + 12); cols.push({ h: `Год ${y + 1}`, sub: `мес. ${y * 12 + 1}–${y * 12 + rr.length}`, rows: rr, year: true }); }
-  const STOCK = new Set(["cashPre", "cashPost"]);
-  const cell = (c, k) => {
-    if (k === "dscrAll") { const cf = c.rows.reduce((a, r) => a + r.cfads, 0), ds = c.rows.reduce((a, r) => a + r.dsAll, 0); return ds > 0 ? cf / ds : null; }
-    return STOCK.has(k) ? c.rows[c.rows.length - 1][k] : c.rows.reduce((a, r) => a + r[k], 0);
-  };
-  const lowIn = (c, k) => STOCK.has(k) && c.rows.some(r => r[k] < o.buffer);
-  const monthly = `<div class="tabs" role="tablist" style="margin-top:18px"><button role="tab" aria-selected="${!FC_TAB}" data-fctab="0">База</button><button role="tab" aria-selected="${!!FC_TAB}" data-fctab="1">Стресс</button></div>
-    <p class="hint">Первые 24 месяца — помесячно, дальше — по годам (суммы за год; деньги — на конец года, подсвечены, если в течение года опускались ниже минимума).</p>
-    <div class="tablewrap"><table class="data"><thead><tr><th class="lab">Тыс. тг</th>${cols.map(c => `<th class="${c.year ? "yr" : ""}">${c.h}<span class="pertitle">${c.sub}</span></th>`).join("")}</tr></thead><tbody>
-    ${[["rev", "Выручка"], ["ebitda", "EBITDA"], ["cit", "КПН"], ["dn", "Прирост оборотного капитала"], ["cfo", "Операционный поток"], ["mc", "Поддерживающие капвложения"], ["cfads", "CFADS"], ["ds", "Обслуживание действующего долга"], ["ic", "Инвестпроекты"], ["cashPre", "Деньги на конец без кредита"], ["draw", "Выдача кредита"], ["nprin", "Погашение нового кредита"], ["nint", "Проценты по новому кредиту"], ["cashPost", "Деньги на конец с кредитом"], ["dscrAll", "DSCR с кредитом"]]
-      .map(([k, l]) => `<tr class="${k === "cashPost" || k === "cfads" ? "calc" : ""}"><td class="lab">${l}</td>${cols.map(c => { const v = cell(c, k); const cls = (lowIn(c, k) ? "low" : isNum(v) && v < 0 ? "neg" : "") + (c.year ? " yr" : ""); return `<td class="${cls}">${fmt(v, k === "dscrAll" ? "x" : "m")}</td>`; }).join("")}</tr>`).join("")}
-    </tbody></table></div>`;
-  return `<div class="fcres"><div>${sum}</div><div><h3>Остаток денег по месяцам (${b.H} мес.), тыс. тг</h3>${cashChart(b, s)}<div class="legend"><span><i class="ln b"></i>база с кредитом</span><span><i class="ln s"></i>стресс с кредитом</span><span><i class="ln buf"></i>минимальный остаток</span></div></div></div>${monthly}`;
+  return `<div class="fcres"><div>${sum}</div><div><h3>Остаток денег по месяцам (${b.H} мес.), тыс. тг</h3>${cashChart(b, s)}<div class="legend"><span><i class="ln b"></i>база с кредитом</span><span><i class="ln s"></i>стресс с кредитом</span><span><i class="ln buf"></i>минимальный остаток</span></div></div></div>`;
 }
 function cashChart(b, s) {
   const W = 520, H = 230, pl = 64, pr = 10, pt = 10, pb = 26;
@@ -357,7 +316,7 @@ function discrepancies() {
 }
 function pageProb() {
   const pers = C.periods;
-  const groups = [["card", "Карточка"], ["trust", "Благонадёжность"], ["bal", "Баланс"], ["odr", "ОПиУ"], ["cf", "ДДС"], ["tax", "Налоги"], ["bank", "Банк"], ["credit", "Кредитная история"], ["coll", "Залог и гаранты"], ["cons", "Свод группы и прогноз"], ["an", "Анализ"]];
+  const groups = [["card", "Карточка"], ["trust", "Благонадёжность"], ["bal", "Баланс"], ["odr", "ОПиУ"], ["cf", "ДДС"], ["tax", "Налоги"], ["bank", "Банк"], ["credit", "Кредитная история"], ["coll", "Залог и гаранты"], ["cons", "Свод группы"], ["fc", "Прогноз"], ["an", "Анализ"]];
   const cnt = s => PROB.filter(p => p.sev === s).length;
   let h = `<div class="pagehead"><div class="lead"><h1>Проблемы и решения</h1><p>Всё, что мешает выводу: ошибки и пропуски в данных, расхождения, зоны риска и дефициты в прогнозе — с подсказкой, что делать. Ячейки с проблемами подсвечены на страницах форм.</p></div></div>
     <div class="chips" style="margin-bottom:14px">${["crit", "risk", "chk", "nd"].map(s => `<span class="st ${s}">${SEV[s]}: ${cnt(s)}</span>`).join("")}</div>`;
@@ -388,7 +347,7 @@ function riskSummary(obj) {
 function pageConcl() {
   const rs = riskSummary(C.obj);
   return `<div class="pagehead"><div class="lead"><h1>Заключение</h1><p>Цифры и оценки подставляются автоматически из анализа; выводы и рекомендацию пишет кредитный менеджер.</p></div>
-    <div class="toolbar">${objSelect()}<button class="btn primary" data-act="word">Скачать в Word</button><button class="btn" data-act="print">Печать / PDF</button></div></div>
+    <div class="toolbar">${objSelect()}<button class="btn primary" data-act="word">Скачать в Word</button><button class="btn" data-act="print">Печать / PDF</button><button class="btn" data-act="aipdf" title="Только цифры, без названий, БИН, адресов и имён">Скачать в PDF для ИИ</button></div></div>
   <section class="panel noprint"><h2>Оценка и решение</h2><p class="hint">Автоиндикатор: ${stChip(rs.ind[0], rs.ind[1])}</p><div class="grid2">
     <label class="f"><span>Рекомендация</span><select class="inp" data-concl="decision"><option value=""></option>${opts(S.lists.decision, C.concl.decision)}</select></label>
     <label class="f"><span>Статус</span><select class="inp" data-concl="status">${opts(["Черновик", "На проверке", "Утверждено"], C.concl.status)}</select></label></div>
@@ -434,7 +393,7 @@ function pageNorms() {
   ${keys.map(k => { const o = RATN[k] || {}, d = RAT_DEF[k]; const cell = f => `<td class="cell"><input class="inp num" data-norm="${k}" data-f="${f}" value="${esc(o[f] !== undefined ? show(k, o[f]) : "")}" placeholder="${esc(show(k, d[f]))}"></td>`;
     return `<tr><td class="lab">${esc(RAT[k].label)}<span class="formula">${esc(RAT[k].formula || "")}</span></td><td>${esc(RAT[k].dir)}</td>${cell("green")}${cell("red")}${d.crit === null || d.crit === undefined ? "<td></td>" : cell("crit")}<td>${unit(k)}</td></tr>`; }).join("")}</tbody></table></div>${trustNormsPanel()}`;
 }
-const PAGES = { fin: pageFin, card: pageCard, bal: () => pageForm("bal"), odr: () => pageForm("odr"), cf: () => pageForm("cf"), tax: pageTax, bank: pageBank, credit: pageCredit, coll: pageColl, trust: pageTrust, cons: pageCons, an: pageAn, prob: pageProb, concl: pageConcl, map: pageMap, log: pageLog, norms: pageNorms };
+const PAGES = { fin: pageFin, card: pageCard, bal: () => pageForm("bal"), odr: () => pageForm("odr"), cf: () => pageForm("cf"), tax: pageTax, bank: pageBank, credit: pageCredit, coll: pageColl, trust: pageTrust, cons: pageCons, fc: pageFc, ai: pageAi, an: pageAn, prob: pageProb, concl: pageConcl, map: pageMap, log: pageLog, norms: pageNorms };
 
 /* ---------- диалоги */
 function dialog(title, body, buttons) {
@@ -641,6 +600,7 @@ function refreshCalc() {
   });
   PROB = problems(); paintProblemMarks();
   const out = $("#fcOut"); if (out) out.innerHTML = fcOutHTML();
+  if (typeof fcqRefresh === "function") fcqRefresh();
   const hz = document.querySelector('select[data-fc="horizon"] option[value="0"]'); if (hz) hz.textContent = `По сроку кредита (${fcHorizon()} мес.)`;
 }
 const safeName = s => String(s || "клиент").replace(/[\\/:*?"<>|«»]/g, "").trim().slice(0, 60) || "клиент";

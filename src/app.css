@@ -246,6 +246,7 @@ dialog { border-radius: var(--shape); }
 .prob .st { justify-self: start; }
 .prob .fix { margin: 4px 0 0; color: #3A3A3A; font-size: 13px; }
 .prob .fix::before { content: "Что сделать: "; font-weight: 600; color: var(--blue); }
+html[lang="kk"] .prob .fix::before { content: "Не істеу керек: "; }
 .st.nd { background: var(--nd-bg); }
 table.data td.cell input.bad { outline: 2px solid #FFB020; outline-offset: -2px; background: #FFF6E5; }
 table.data td.cell input.bad-crit { outline-color: #FF4D4F; background: #FFEDED; }
@@ -446,3 +447,17 @@ table.odfin th select { max-width: 210px; font-weight: 600; }
 table.data tr.warn td { background: #FFF6E5; }
 table.odfin th .formula { display: block; font-weight: 400; margin-top: 2px; }
 table.odfin th { vertical-align: top; }
+/* прогноз по кварталам */
+.fcqwrap { max-height: 72vh; }
+table.fcq td.lab { min-width: 340px; max-width: 420px; white-space: normal; }
+table.fcq .fnote { display: block; font-size: 11px; }
+table.fcq th, table.fcq td { min-width: 92px; }
+table.fcq td.fcq input { background: transparent; }
+table.fcq td.fcq.ovr input, table.fcq td.fcq.ovr { background: #fff6c8; }
+table.fcq tr.sub td { color: #666; font-size: 12px; }
+table.fcq tr.sub td.lab { padding-left: 28px; }
+/* ИИ */
+.aiprev { margin-top: 12px; border: 1px solid #e5e4e2; border-radius: 8px; padding: 12px 14px; max-height: 60vh; overflow: auto; background: #fbfbfa; }
+.aiprev h3 { margin: 0 0 6px; } .aiprev h4 { margin: 14px 0 6px; color: #023dff; }
+.aians { margin-top: 12px; border-left: 3px solid #023dff; padding: 4px 14px; }
+.aians h4 { margin: 12px 0 4px; } .aians ul { margin: 4px 0 8px 18px; }
