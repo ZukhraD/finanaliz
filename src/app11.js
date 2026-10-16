@@ -64,6 +64,7 @@ async function decodeFiles(files, k, pid, factor) {
     stat[file.name] = { rows: 0, sheets: [] };
     for (const sh of sheets) {
       if (sh.hidden && sheets.length > 1) continue;
+      if (isEquitySheet(sh) && eqParse(sh)) continue;   // отчёт о капитале разбирается отдельно
       const form = ["B", "P", "C"].includes(detectKind(sh));   // в формах — только строки без кодов
       const { out, scanned } = decParseSheet(sh, year, form);
       stat[file.name].rows += scanned; if (scanned) stat[file.name].sheets.push(sh.name);
@@ -94,3 +95,56 @@ async function decodeReview(found, k, pid) {
   touch();
   return Object.keys(sums).length;
 }
+
+/* ---------------------------------------------------------------- Отчёт об изменениях в капитале: только для анализа.
+   Из колонки «Нераспределённая прибыль» за отчётный год берутся дивиденды и прочие движения (корректировки прошлых лет,
+   переводы в резервы, прочее) — ими объясняется изменение нераспределённой прибыли в проверке. */
+const isEquitySheet = sh => sh.rows.slice(0, 30).some(r => r && r.some(v => typeof v === "string" && /изменени\S*\s+(в\s+)?капитал|changes\s+in\s+equity/i.test(v)));
+function eqParse(sh) {
+  const rows = sh.rows; let reCol = 0, hdr = 0;
+  for (let r = 1; r <= Math.min(rows.length - 1, 30) && !reCol; r++) { const row = rows[r]; if (!row) continue; for (let c = 1; c < row.length; c++) if (typeof row[c] === "string" && /нераспредел|непокрыт/i.test(row[c])) { reCol = c; hdr = r; break; } }
+  if (!reCol) return null;
+  // колонка кодов
+  const cc = {}; for (let r = hdr + 1; r < rows.length; r++) { const row = rows[r]; if (!row) continue; for (let c = 1; c <= Math.min(5, row.length - 1); c++) if (c !== reCol && normCode(row[c])) cc[c] = (cc[c] || 0) + 1; }
+  const cb = Object.entries(cc).sort((x, y) => y[1] - x[1])[0], codeCol = cb && cb[1] >= 3 ? +cb[0] : 0;
+  const lines = [];
+  for (let r = hdr + 1; r < rows.length; r++) {
+    const row = rows[r]; if (!row) continue;
+    const lab = row.filter((v, c) => c !== reCol && typeof v === "string" && /[А-Яа-яЁё]/.test(v)).join(" ").replace(/\s+/g, " ").trim();
+    if (!lab) continue;
+    lines.push({ lab, low: normTxt(lab), code: codeCol ? +normCode(row[codeCol]) || 0 : 0, v: typeof row[reCol] === "number" ? row[reCol] : null });
+  }
+  // отчётный год: коды 100–199, иначе строки после второго «сальдо на 1 января / на начало»
+  let sect;
+  if (lines.some(l => l.code >= 100 && l.code < 200)) sect = lines.filter(l => l.code >= 100 && l.code < 200);
+  else {
+    const st = lines.map((l, i) => /сальдо\s+на\s+(1\s+январ|начало)/.test(l.low) ? i : -1).filter(i => i >= 0);
+    const from = st.length > 1 ? st[1] : st.length ? st[0] : 0;
+    const end = lines.findIndex((l, i) => i > from && /сальдо\s+на\s+(31\s+декабр|конец)/.test(l.low));
+    sect = lines.slice(from, end > 0 ? end : lines.length);
+  }
+  const res = { div: 0, adj: 0, res: 0, oth: 0, ni: null, items: [] };
+  for (const l of sect) {
+    if (!isNum(l.v) || l.v === 0) continue;
+    if (/сальдо|пересчитанн/.test(l.low)) continue;
+    if (/^(итого|всего)|общ\S*\s+совокупн|операции\s+с\s+собственник/.test(l.low)) continue;   // промежуточные итоги
+    if (/прибыл\S*\s*\(?убыт\S*\)?\s*за\s+(год|период)|чист\S*\s+прибыл/.test(l.low)) { res.ni = l.v; continue; }
+    const cat = /дивиденд/.test(l.low) ? "div" : /(учетн\S*\s+политик|исправлени\S*\s+ошиб|корректировк|пересчет)/.test(l.low) ? "adj" : /(перевод|резерв|переоценк)/.test(l.low) ? "res" : "oth";
+    if (cat === "div") res.div += Math.abs(l.v); else res[cat] += l.v;
+    res.items.push({ cat, lab: l.lab.slice(0, 120), v: l.v });
+  }
+  return res;
+}
+function eqImport(sh, k, pid, factor, file) {
+  const e = eqParse(sh); if (!e) return null;
+  const m = v => Math.round(v * factor * 1000) / 1000;
+  const mv = { div: m(e.div), adj: m(e.adj), res: m(e.res), oth: m(e.oth), ni: isNum(e.ni) ? m(e.ni) : null, items: e.items.map(x => ({ ...x, v: m(x.v) })), file };
+  C.eqmv = C.eqmv || {}; C.eqmv[k] = C.eqmv[k] || {}; C.eqmv[k][pid] = mv;
+  // дивиденды для проверки нераспределённой прибыли — из отчёта о капитале
+  C.data[k] = C.data[k] || {}; C.data[k].div = C.data[k].div || {}; C.data[k].div[pid] = mv.div;
+  C.src[k] = C.src[k] || {}; C.src[k].div = C.src[k].div || {}; C.src[k].div[pid] = { file, form: "Отчёт об изменениях в капитале", status: "Не проверено" };
+  const other = mv.adj + mv.res + mv.oth;
+  return { file, sheet: sh.name, eq: true, text: `учтён для проверки нераспределённой прибыли: дивиденды ${fmt(mv.div)}${other ? `, прочие движения ${fmt(other)}` : ""} (тыс. тг)` };
+}
+// прочие движения нераспределённой прибыли за период (корректировки, резервы, прочее) по отчёту о капитале
+const eqOther = (k, pid) => { const e = C.eqmv?.[k]?.[pid]; return e ? e.adj + e.res + e.oth : null; };

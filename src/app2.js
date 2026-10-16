@@ -302,12 +302,12 @@ async function importFiles(files, k, pid, askUnits, forced) {
     if (!/\.(xlsx|xlsm|xls)$/i.test(file.name)) { report.push({ file: file.name, err: "формат не поддерживается — нужен Excel (.xlsx, .xlsm, .xls)" }); continue; }
     let sheets;
     try { sheets = await readWorkbook(await file.arrayBuffer()); } catch (e) { report.push({ file: file.name, err: "не удалось прочитать: " + e.message }); continue; }
-    const parsed = [], used = [];
+    const parsed = [], used = [], eqSheets = [];
     let lastKind = null;
     for (const sh of sheets) {
       if (sh.hidden && sheets.length > 1) continue;
       let kind = detectKind(sh);
-      if (kind === "X") { lastKind = null; continue; }
+      if (kind === "X") { lastKind = null; if (isEquitySheet(sh)) eqSheets.push(sh); continue; }
       // лист без заголовка сразу после формы — её продолжение (вторая страница)
       if (!kind && lastKind) { const mc = mapCodes(lastKind); let n = 0; for (const row of sh.rows) if (row) for (const v of row) if (mc.has(normCode(v))) n++; if (n >= 3) kind = lastKind; }
       if (!kind) continue;
@@ -318,16 +318,17 @@ async function importFiles(files, k, pid, askUnits, forced) {
       if (f.err) { report.push({ file: file.name, sheet: sh.name, err: f.err }); continue; }
       parsed.push({ kind, f, sheet: sh.name });
     }
-    if (!parsed.length) { if (!report.some(r => r.file === file.name)) report.push({ file: file.name, err: "не найдено ни баланса, ни ОПиУ, ни ОДДС (нужен заголовок формы или колонка кодов строк)" }); continue; }
+    if (!parsed.length && !eqSheets.length) { if (!report.some(r => r.file === file.name)) report.push({ file: file.name, err: "не найдено ни баланса, ни ОПиУ, ни ОДДС (нужен заголовок формы или колонка кодов строк)" }); continue; }
     // единицы — один ответ на файл
     const units = forced || C.settings.units || "auto";
     let factor = { t: 0.001, k: 1, m: 1000 }[units] || 0, why = forced ? "указано при загрузке" : "по настройке";
-    const mx = Math.max(...parsed.map(p => p.f.max));
+    const mx = parsed.length ? Math.max(...parsed.map(p => p.f.max)) : 0;
     const hints = unitHints(used), au = autoUnits(k, pid, mx, hints);
     if (forced === "k" && (hints.frac >= 0.3 || mx >= 1e9)) why += " — внимание: " + (hints.frac >= 0.3 ? "в файле суммы с тиынами, так бывает в тенге" : "числа очень большие для тысяч") + ", проверьте";
     if (forced === "t" && mx > 0 && mx < 1e5) why += " — внимание: числа маленькие для тенге, проверьте";
     if (!forced && (units === "ask" || (!factor && au.ask))) { factor = await askUnits(file.name, mx, au.f === 0.001 ? "t" : au.f === 1000 ? "m" : "k"); why = "указано вручную"; if (!factor) { report.push({ file: file.name, err: "загрузка отменена" }); continue; } }
     if (!factor) { factor = au.f; why = "определено автоматически " + au.why; }
+    for (const sh of eqSheets) { const r = eqImport(sh, k, pid, factor, file.name); if (r) report.push(r); }
     for (const { kind, f, sheet } of parsed) {
       const prof = chooseProfile(f, kind);
       let n = 0, over = 0; const miss = new Set();

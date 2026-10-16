@@ -305,7 +305,7 @@ function compChecks(k, pid) {
   out.push(["Итог долгосрочных обязательств = отчётность", !isNum(g("ltl_rep")) ? "na" : abs(sums(["ltloan", "lease", "oltl"]), g("ltl_rep"))]);
   out.push(["Итог капитала = отчётность", !isNum(g("eq_rep")) ? "na" : abs(sums(["sc", "re", "oeq"]), g("eq_rep"))]);
   out.push(["Чистая прибыль: расчёт = отчётность", !isNum(g("ni_rep")) ? "na" : (allNum(g("ebt"), g("cit")) ? abs(g("ebt") - g("cit"), g("ni_rep")) : "nd")]);
-  out.push(["Нераспределённая прибыль: изменение = ЧП − дивиденды", !pp || !isNum(g("div")) ? "na" : (allNum(g("re"), val(k, "re", pp), g("ni")) ? abs(g("re") - val(k, "re", pp), g("ni") - g("div")) : "nd")]);
+  out.push([C.eqmv?.[k]?.[pid] ? "Нераспределённая прибыль: изменение = ЧП − дивиденды ± прочие движения (отчёт о капитале)" : "Нераспределённая прибыль: изменение = ЧП − дивиденды", !pp || !isNum(g("div")) ? "na" : (allNum(g("re"), val(k, "re", pp), g("ni")) ? abs(g("re") - val(k, "re", pp), g("ni") - g("div") + (C.eqmv?.[k]?.[pid] ? eqOther(k, pid) : 0)) : "nd")]);
   out.push(["ОДДС: деньги на конец (стр. 150) = деньги в балансе", !isNum(g("cf150")) ? "na" : abs(g("cf150"), g("cash")), allNum(g("cf150"), g("cash")) ? g("cf150") - g("cash") : null]);
   out.push(["ОДДС: стр. 150 по расчёту = по отчётности", !isNum(g("cf150r")) ? "na" : abs(g("cf150"), g("cf150r")), allNum(g("cf150"), g("cf150r")) ? g("cf150") - g("cf150r") : null]);
   out.push(["ОДДС: деньги на начало (стр. 140) = деньги в балансе прошлого периода", !pp || !isNum(g("cf140")) ? "na" : abs(g("cf140"), val(k, "cash", pp)), pp && allNum(g("cf140"), val(k, "cash", pp)) ? g("cf140") - val(k, "cash", pp) : null]);
