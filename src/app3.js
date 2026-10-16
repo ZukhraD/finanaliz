@@ -110,7 +110,7 @@ function pageCard() {
   const sel = (key, lab, list) => `<label class="f"><span>${lab}</span><select class="inp" data-card="${key}">${opts(list, c[key])}</select></label>`;
   const comps = C.companies.map((x, i) => `<tr><td class="lab">К${i + 1}</td>
       <td><input class="inp" data-comp="${i}" data-f="name" value="${esc(x.name)}" placeholder="Название"></td>
-      <td><div class="binrow"><input class="inp" data-comp="${i}" data-f="bin" value="${esc(x.bin)}" placeholder="12 цифр" inputmode="numeric"><button class="btn ghost" data-binlookup="${i}" title="Заполнить наименование, дату регистрации, ОКЭД и руководителя по тексту со страницы stat.gov.kz">По БИН</button></div></td>
+      <td><div class="binrow"><input class="inp" data-comp="${i}" data-f="bin" value="${esc(x.bin)}" placeholder="12 цифр" inputmode="numeric"><button class="btn ghost" data-binlookup="${i}" title="Загрузить данные компании с ba.prg.kz: регистрация, ОКЭД, руководитель, НДС, проверки благонадёжности (отправляется только БИН)">По БИН</button></div></td>
       <td><div class="roles">${S.lists.role.map(r => `<label><input type="checkbox" data-role="${i}" value="${esc(r)}" ${compRoles(x).includes(r) ? "checked" : ""}>${esc(r)}</label>`).join("")}</div></td>
       <td><select class="inp" data-comp="${i}" data-f="form">${opts(S.lists.form, x.form)}</select></td>
       <td><select class="inp" data-comp="${i}" data-f="vat">${opts(["Да", "Нет"], x.vat)}</select></td>
@@ -132,7 +132,7 @@ function pageCard() {
     <label class="f"><span>Допуск сверок, тыс. тг</span><input class="inp" data-card="tol" data-num value="${esc(fmt(c.tol))}"></label>
   </div></section>
   ${okedPanel()}
-  <section class="panel"><h2>Компании (${nComp()} из ${MAX_COMP})</h2><p class="hint">Для группы анализ строится по сумме компаний за вычетом внутригрупповых операций. БИН нужен, чтобы находить внутригрупповые операции. Кнопка «По БИН» заполняет регистрационные данные по тексту, скопированному со stat.gov.kz.</p>
+  <section class="panel"><h2>Компании (${nComp()} из ${MAX_COMP})</h2><p class="hint">Для группы анализ строится по сумме компаний за вычетом внутригрупповых операций. БИН нужен, чтобы находить внутригрупповые операции. Кнопка «По БИН» сама загружает данные компании с ba.prg.kz (Параграф) — наружу уходит только БИН.</p>
     <div class="tablewrap" style="max-height:none"><table class="data form"><thead><tr><th class="lab">№</th><th style="text-align:left">Название</th><th style="text-align:left">БИН / ИИН</th><th style="text-align:left">Роль</th><th style="text-align:left">Форма</th><th style="text-align:left">Плательщик НДС</th><th style="text-align:left">Налоговый режим</th><th></th></tr></thead><tbody>${comps}</tbody></table></div>
     ${nComp() < MAX_COMP ? `<p style="margin-top:10px"><button class="btn" data-act="addcomp">Добавить компанию</button></p>` : ""}</section>
   <section class="panel"><h2>Отчётные периоды (${C.periods.length} из ${MAX_PER})</h2><p class="hint">Выберите год и квартал — дата, число месяцев и название подставятся сами. Для квартала основа «Нарастающим итогом» означает отчётность с начала года (3, 6, 9 мес.), «Отдельный период» — только за этот квартал. Обороты пересчитываются в годовые как ×12/месяцев.</p>

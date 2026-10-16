@@ -3769,7 +3769,7 @@ function pageTrust() {
   ensureTrust();
   const k = COMP_TAB > nComp() ? 1 : COMP_TAB, s = trustSummary(k), t = s.t;
   const opt = (id, cur) => `<select class="inp tst ${cur}" data-trust="${id}">${Object.entries(TST).map(([v, l]) => `<option value="${v}"${cur === v ? " selected" : ""}>${l}</option>`).join("")}</select>`;
-  return `<div class="pagehead"><div class="lead"><h1>Благонадёжность</h1><p>Проверка компании по официальным реестрам и сервисам проверки контрагентов. Загрузите отчёт из «Параграфа» (PRG.Tekser) или аналогичного сервиса в PDF, HTML или Excel — сайт найдёт в нём факторы риска и предложит отметки. Отчёт читается в этом браузере и никуда не отправляется. Кнопка «Подтянуть по БИН» разбирает текст, скопированный со страницы stat.gov.kz.</p></div>
+  return `<div class="pagehead"><div class="lead"><h1>Благонадёжность</h1><p>Проверка компании по официальным реестрам и сервисам проверки контрагентов. Загрузите отчёт из «Параграфа» (PRG.Tekser) или аналогичного сервиса в PDF, HTML или Excel — сайт найдёт в нём факторы риска и предложит отметки. Отчёт читается в этом браузере и никуда не отправляется. Кнопка «Подтянуть по БИН» сама загружает открытую страницу компании на ba.prg.kz (наружу уходит только БИН) и заполняет регистрационные данные и проверки КГД, госзакупок и Минюста.</p></div>
     <div class="toolbar"><button class="btn" data-binlookup="${k - 1}">Подтянуть по БИН</button><button class="btn primary" data-act="trustdlg">Загрузить отчёт</button></div></div>
   ${compTabs()}<div id="probBanner" data-page="trust">${bannerHTML("trust")}</div>
   <section class="panel"><h2>${esc(compName(k))}</h2>
@@ -3779,6 +3779,7 @@ function pageTrust() {
       <label class="f"><span>Юридический адрес</span><input class="inp" data-trustf="address" value="${esc(t.address || "")}"></label>
       <label class="f"><span>Дата проверки</span><input class="inp" type="date" data-trustf="date" value="${esc(t.date || "")}"></label>
       <label class="f"><span>Источник</span><input class="inp" data-trustf="source" value="${esc(t.source || (t.src?.length ? t.src[t.src.length - 1].file : ""))}" placeholder="Параграф, КГД, egov…"></label></div>
+    ${t.prg ? `<p class="small" style="margin-top:10px">По данным <a href="${esc(t.prg.url)}" target="_blank" rel="noopener noreferrer">Параграфа</a> на ${esc(t.prg.date.split("-").reverse().join("."))}: ${[t.prg.krp && "КРП " + t.prg.krp, t.prg.vat && "плательщик НДС — " + t.prg.vat.toLowerCase(), t.prg.regime && "режим — " + t.prg.regime.toLowerCase(), isNum(t.prg.debt) && "налоговая задолженность " + fmt(t.prg.debt / 1000) + " тыс. тг", t.prg.taxes?.length && "налоговые отчисления, тыс. тг: " + t.prg.taxes.map(z => z.y + " — " + fmt(z.v / 1000)).join(", ")].filter(Boolean).map(esc).join("; ")}.</p>` : ""}
     ${isNum(s.age) ? `<p class="hint" style="margin-top:8px">На рынке ${nf1.format(s.age)} ${s.age < 5 ? "года" : "лет"}.</p>` : ""}
     <div class="tablewrap" style="max-height:none;margin-top:12px"><table class="data trust"><thead><tr><th class="lab">Проверка</th><th>Уровень</th><th>Результат</th><th style="text-align:left">Комментарий / найдено в отчёте</th></tr></thead><tbody>
     ${TRUST.map(([id, title, sev]) => { const it = t.items[id]; return `<tr class="${it.st === "yes" ? "hit-" + sev : ""}"><td class="lab">${esc(title)}</td><td>${stChip(sev, sev === "crit" ? "стоп-фактор" : sev === "risk" ? "риск" : "проверить")}</td><td>${opt(id, it.st)}</td><td class="cell"><input class="inp" data-trustnote="${id}" value="${esc(it.note || "")}" style="text-align:left"></td></tr>`; }).join("")}
@@ -3888,11 +3889,98 @@ function binParseText(txt) {
     krp: out.krp || "", kse: "", kfs: out.kfs || "", address: out.address || "", director: out.director || "", ip: /индивидуальн\S*\s+предприниматель/i.test(t) && !/тоо|товариществ|акционерн/i.test(t.slice(0, 300)) };
   return d.name || d.regDate || d.okedCode || d.director ? d : null;
 }
+/* ---------- «Подтянуть по БИН» автоматически: открытая страница компании на ba.prg.kz через сервер сайта (api/prg.js) */
+const PRG_RULES = [
+  [/ограничена\s+выписка\s+эсф/, ["violator"], "ограничена выписка ЭСФ"],
+  [/перерегистрация\s+которых\s+признана\s+недействительной/, ["fake"], "перерегистрация признана недействительной"],
+  [/регистрация\s+которых\s+признана\s+недействительной/, ["fake"], "регистрация признана недействительной"],
+  [/лжепредприят/, ["fake"], "лжепредприятие"],
+  [/имеющих\s+налоговую\s+задолженность/, ["taxdebt"], "в списке должников по налогам КГД"],
+  [/банкрот/, ["bankrupt"], "банкрот"],
+  [/отсутствующих\s+по\s+юридическому\s+адресу/, ["address"], "отсутствует по юридическому адресу"],
+  [/бездействующ/, ["inactive"], "бездействующий налогоплательщик"],
+  [/недобросовестн\S*\s+участник/, ["procure"], "недобросовестный участник госзакупок"],
+  [/реестр\S*\s+должник/, ["erd", "travel"], "единый реестр должников / ограничение выезда"],
+  [/нарушител\S*\s+налогов/, ["violator"], "нарушитель налогового законодательства"],
+  [/(террор|экстремизм|распространени\S*\s+оружия)/, ["terror"], "перечень лиц, связанных с терроризмом"],
+  [/степен\S*\s+риска/, ["riskdeg"], "степень риска КГД"],
+  [/(ликвидац|реорганизац)/, ["status"], "ликвидация / реорганизация"],
+];
+function prgParse(j) {
+  const L = (j.lines || []).map(s => String(s).trim()), low = s => s.toLowerCase().replace(/ё/g, "е");
+  const at = re => L.findIndex(l => re.test(l));
+  const next = re => { const i = at(re); return i >= 0 ? (L[i + 1] || "") : ""; };
+  const date = s => (/(\d{2}\.\d{2}\.\d{4})/.exec(s || "") || [])[1] || "";
+  const p = { name: j.h1 || "", url: j.url };
+  p.regDate = date(next(/^первичная\s+регистрация$/i)) || date(next(/^дата\s+(первичной\s+)?регистрации$/i));
+  p.director = next(/^руководитель(\s+компании)?$/i).replace(/^(рус|қаз)\s+/i, "");
+  p.krp = next(/^крп$/i); p.kse = next(/^ксе$/i); p.kfs = next(/^кфс$/i);
+  const ok = next(/^основной\s+окэд$/i), mo = /^(\d{5})\s*(.*)$/.exec(ok);
+  p.okedCode = mo ? mo[1] : ""; p.okedName = mo ? mo[2] : "";
+  p.secondOkeds = []; { const i = at(/^вторичн\S*\s+окэд$/i); if (i >= 0) for (let n = i + 1; n < L.length && /^\d{5}(\s|$)/.test(L[n]); n++) p.secondOkeds.push(L[n].slice(0, 5)); }
+  { const i = at(/^юридический\s+адрес$/i); if (i >= 0) p.address = (L.slice(i + 1, i + 4).find(l => /^рус\s/i.test(l)) || L[i + 1] || "").replace(/^рус\s+/i, ""); }
+  p.vat = next(/^плательщик\s+ндс$/i); p.regime = next(/^вид\s+налогового\s+режима$/i);
+  p.taxes = []; { const i = at(/^сумма\s+налоговых\s+отчислений$/i); if (i >= 0) for (let n = i + 1; n < Math.min(L.length, i + 80) && !/^(показать|история)/i.test(L[n]); n++) { const y = /^(\d{4})\s*г\.?$/.exec(L[n]); if (y) { const v = parseNum((L[n + 1] || "").replace(/[₸\s]/g, "").replace(",", ".")); if (isNum(v)) p.taxes.push({ y: +y[1], v }); } } }
+  p.debt = null; { const i = at(/^всего\s+задолженностей/i); if (i >= 0) for (let n = i + 1; n < Math.min(L.length, i + 40) && !/^благонадежность\s+предприятия$/i.test(L[n]); n++) { const m = /^(-?[\d\s]+[.,]\d{2})\s*₸$/.exec(L[n]); if (m) { const v = +m[1].replace(/\s/g, "").replace(",", "."); p.debt = Math.max(p.debt ?? 0, v); } } }
+  // благонадёжность: «Список налогоплательщиков, … Нет» + «Проверено: дата»
+  const items = {}, hits = [];
+  const s0 = L.findIndex((l, n) => /^благонадежность\s+предприятия$/i.test(low(l)) && /нарушени/i.test(L[n + 1] || ""));
+  const s1 = L.findIndex((l, n) => n > s0 && /^смежные\s+предприятия$/i.test(l));
+  for (let n = s0 >= 0 ? s0 + 1 : 0; n < (s1 > 0 ? s1 : L.length); n++) {
+    const t = low(L[n]); if (/^проверено/.test(t) || t.length < 6) continue;
+    const r = PRG_RULES.find(([re]) => re.test(t)); if (!r) continue;
+    let v = (/(?:^|\s)(да|нет|есть|не\s+числится|числится)$/.exec(t) || [])[1];
+    if (!v && /^(да|нет|есть)$/i.test(L[n + 1] || "")) v = low(L[n + 1]);
+    if (!v) continue;
+    const st = /^(нет|не\s+числится)$/.test(v) ? "no" : "yes", chk = date(L[n + 1]) || date(L[n + 2]);
+    for (const id of r[1]) if (!items[id] || st === "yes") items[id] = { st, note: (st === "yes" ? "ВЫЯВЛЕНО: " + r[2] : "нет") + " (Параграф" + (chk ? ", проверено " + chk : "") + ")" };
+    if (st === "yes") hits.push(r[2]);
+  }
+  if (isNum(p.debt) && p.debt > 0) { items.taxdebt = { st: "yes", note: `ВЫЯВЛЕНО: налоговая задолженность ${nf0.format(p.debt)} тг (Параграф)` }; hits.push(`налоговая задолженность ${nf0.format(p.debt)} тг`); }
+  else if (isNum(p.debt) && !items.taxdebt) items.taxdebt = { st: "no", note: "задолженность 0 тг (Параграф)" };
+  p.items = items; p.hits = [...new Set(hits)];
+  return p;
+}
 async function binLookup(i) {
   const x = C.companies[i]; if (!x) return;
   const bin = String(x.bin || (i === 0 ? C.card.bin : "") || "").replace(/\D/g, "");
   if (!/^\d{12}$/.test(bin)) { toast("Сначала укажите БИН/ИИН из 12 цифр"); return; }
-  const body = `<ol style="margin:0 0 10px 18px;padding:0">
+  if (location.protocol === "file:") return binPaste(i, bin, "в файле, открытом с компьютера, сайт не выходит в интернет — откройте сайт по ссылке");
+  toast("Проверяю БИН " + bin + " на ba.prg.kz…");
+  let j = null, r;
+  try { r = await fetch("/api/prg?bin=" + bin, { headers: { accept: "application/json" }, cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer" }); try { j = await r.json(); } catch (e) { /* ниже */ } }
+  catch (e) { return binPaste(i, bin, "нет связи с сервером сайта"); }
+  if (!j || !j.ok) {
+    if (r.status === 404) { await dialog("Компания не найдена", `<p>${esc(j?.error || "На ba.prg.kz нет компании с таким БИН")}: <b>${esc(bin)}</b>. Проверьте БИН в карточке.</p>`, [{ t: "Закрыть", primary: true, v: true }]); return; }
+    return binPaste(i, bin, j?.error || "сервер ответил " + r.status);
+  }
+  const p = prgParse(j), k = i + 1; ensureTrust(); const t = C.trust[k], done = [];
+  if (!p.name && !p.regDate && !p.director) return binPaste(i, bin, "страница ba.prg.kz загрузилась, но данные на ней не распознаны");
+  if (p.name) { if (!x.name) { x.name = p.name; done.push("наименование"); } if (i === 0 && !C.card.name) C.card.name = p.name;
+    const f = /^(ТОО|АО|ИП)(?![А-ЯЁа-яё])/.exec(p.name.replace(/^["«]/, "")); if (f && S.lists.form.includes(f[1]) && x.form !== f[1]) { x.form = f[1]; done.push("форма " + f[1]); } }
+  if (p.regDate) { t.regDate = p.regDate; done.push("дата регистрации"); }
+  if (p.director) { t.director = p.director; done.push("руководитель"); }
+  if (p.address) { t.address = p.address; done.push("адрес"); }
+  if (/^(да|нет)$/i.test(p.vat)) { x.vat = /^да$/i.test(p.vat) ? "Да" : "Нет"; done.push("плательщик НДС"); }
+  if (p.regime) { const rg = /общеустанов/i.test(p.regime) ? "Общеустановленный" : /упрощ/i.test(p.regime) ? "Упрощённая декларация" : "Иной специальный режим"; if (S.lists.regime.includes(rg)) { x.regime = rg; done.push("налоговый режим"); } }
+  if (i === 0 && p.okedCode) { const codes = [p.okedCode, ...p.secondOkeds].slice(0, MAX_OKED); C.card.oked = codes.map((c, n) => ({ code: okedFmt(okedDigits(c)), name: (n === 0 && p.okedName) || okedLookup(c)?.name || "" })); done.push("ОКЭД"); }
+  for (const [id, it] of Object.entries(p.items)) t.items[id] = it;
+  t.prg = { url: p.url, date: isoToday(), krp: p.krp, kse: p.kse, kfs: p.kfs, vat: p.vat, regime: p.regime, taxes: p.taxes, debt: p.debt };
+  t.date = isoToday(); t.source = "Параграф (ba.prg.kz)"; t.src = (t.src || []).concat({ file: "ba.prg.kz", t: Date.now() });
+  const nChk = Object.keys(p.items).length;
+  C.log.unshift({ t: new Date().toISOString(), file: "ba.prg.kz", comp: compName(k), per: "", kind: "БИН", note: `заполнено: ${done.join(", ") || "—"}; проверок благонадёжности: ${nChk}${p.hits.length ? "; выявлено: " + p.hits.join("; ") : ""}` });
+  touch(); render();
+  const taxes = p.taxes.length ? `<p class="small">Налоговые отчисления: ${p.taxes.map(z => `${z.y} г. — ${fmt(z.v / 1000)} тыс. тг`).join("; ")}.</p>` : "";
+  await dialog(p.hits.length ? "Данные по БИН загружены — есть риски" : "Данные по БИН загружены",
+    `<p><b>${esc(p.name || x.name)}</b> · БИН ${esc(bin)}</p>
+    ${p.hits.length ? `<p style="color:#b42318"><b>Выявлено:</b> ${esc(p.hits.join("; "))}.</p>` : `<p style="color:#067647"><b>Нарушений не выявлено</b> по ${nChk} проверкам Параграфа.</p>`}
+    <p class="small">Заполнено: ${esc(done.join(", ") || "—")}. ${p.krp ? "Размерность: " + esc(p.krp) + "." : ""}</p>${taxes}
+    <p class="small muted">Источник: <a href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">страница компании на ba.prg.kz</a>. Судебные дела и госзакупки откройте там на вкладках — они в автоматическую проверку не входят. Пункты «Благонадёжности», которых нет на странице Параграфа, остались «не проверено».</p>`,
+    [{ t: "Открыть «Благонадёжность»", v: "trust" }, { t: "Готово", primary: true, v: true }]).then(v => { if (v === "trust") { PAGE = "trust"; COMP_TAB = k; render(); } });
+}
+async function binPaste(i, bin, why) {
+  const x = C.companies[i]; if (!x) return;
+  const body = `${why ? `<p class="small" style="color:var(--risk,#b42318)">Автоматически не получилось: ${esc(why)}. Можно вставить текст вручную.</p>` : ""}<ol style="margin:0 0 10px 18px;padding:0">
       <li>Откройте <a href="${BIN_PAGE}" target="_blank" rel="noopener noreferrer">поиск юрлиц на stat.gov.kz</a> (новая вкладка) и найдите компанию по БИН <b>${esc(bin)}</b> <button class="btn ghost" type="button" id="binCopy" style="padding:2px 8px">скопировать БИН</button></li>
       <li>На странице с результатом выделите всё (Ctrl+A) и скопируйте (Ctrl+C).</li>
       <li>Вставьте сюда (Ctrl+V) и нажмите «Разобрать».</li></ol>
@@ -4052,7 +4140,7 @@ function pageCard() {
   const sel = (key, lab, list) => `<label class="f"><span>${lab}</span><select class="inp" data-card="${key}">${opts(list, c[key])}</select></label>`;
   const comps = C.companies.map((x, i) => `<tr><td class="lab">К${i + 1}</td>
       <td><input class="inp" data-comp="${i}" data-f="name" value="${esc(x.name)}" placeholder="Название"></td>
-      <td><div class="binrow"><input class="inp" data-comp="${i}" data-f="bin" value="${esc(x.bin)}" placeholder="12 цифр" inputmode="numeric"><button class="btn ghost" data-binlookup="${i}" title="Заполнить наименование, дату регистрации, ОКЭД и руководителя по тексту со страницы stat.gov.kz">По БИН</button></div></td>
+      <td><div class="binrow"><input class="inp" data-comp="${i}" data-f="bin" value="${esc(x.bin)}" placeholder="12 цифр" inputmode="numeric"><button class="btn ghost" data-binlookup="${i}" title="Загрузить данные компании с ba.prg.kz: регистрация, ОКЭД, руководитель, НДС, проверки благонадёжности (отправляется только БИН)">По БИН</button></div></td>
       <td><div class="roles">${S.lists.role.map(r => `<label><input type="checkbox" data-role="${i}" value="${esc(r)}" ${compRoles(x).includes(r) ? "checked" : ""}>${esc(r)}</label>`).join("")}</div></td>
       <td><select class="inp" data-comp="${i}" data-f="form">${opts(S.lists.form, x.form)}</select></td>
       <td><select class="inp" data-comp="${i}" data-f="vat">${opts(["Да", "Нет"], x.vat)}</select></td>
@@ -4074,7 +4162,7 @@ function pageCard() {
     <label class="f"><span>Допуск сверок, тыс. тг</span><input class="inp" data-card="tol" data-num value="${esc(fmt(c.tol))}"></label>
   </div></section>
   ${okedPanel()}
-  <section class="panel"><h2>Компании (${nComp()} из ${MAX_COMP})</h2><p class="hint">Для группы анализ строится по сумме компаний за вычетом внутригрупповых операций. БИН нужен, чтобы находить внутригрупповые операции. Кнопка «По БИН» заполняет регистрационные данные по тексту, скопированному со stat.gov.kz.</p>
+  <section class="panel"><h2>Компании (${nComp()} из ${MAX_COMP})</h2><p class="hint">Для группы анализ строится по сумме компаний за вычетом внутригрупповых операций. БИН нужен, чтобы находить внутригрупповые операции. Кнопка «По БИН» сама загружает данные компании с ba.prg.kz (Параграф) — наружу уходит только БИН.</p>
     <div class="tablewrap" style="max-height:none"><table class="data form"><thead><tr><th class="lab">№</th><th style="text-align:left">Название</th><th style="text-align:left">БИН / ИИН</th><th style="text-align:left">Роль</th><th style="text-align:left">Форма</th><th style="text-align:left">Плательщик НДС</th><th style="text-align:left">Налоговый режим</th><th></th></tr></thead><tbody>${comps}</tbody></table></div>
     ${nComp() < MAX_COMP ? `<p style="margin-top:10px"><button class="btn" data-act="addcomp">Добавить компанию</button></p>` : ""}</section>
   <section class="panel"><h2>Отчётные периоды (${C.periods.length} из ${MAX_PER})</h2><p class="hint">Выберите год и квартал — дата, число месяцев и название подставятся сами. Для квартала основа «Нарастающим итогом» означает отчётность с начала года (3, 6, 9 мес.), «Отдельный период» — только за этот квартал. Обороты пересчитываются в годовые как ×12/месяцев.</p>
