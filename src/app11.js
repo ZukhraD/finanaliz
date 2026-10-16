@@ -60,7 +60,7 @@ function decParseSheet(sh, year, form) {
 async function decodeFiles(files, k, pid, factor) {
   const year = +(perById(pid)?.date || "").slice(0, 4) || 0, found = [], stat = {};
   for (const file of files) {
-    let sheets; try { sheets = await readWorkbook(await file.arrayBuffer()); } catch (e) { continue; }
+    let sheets; try { sheets = await readFormFile(file); } catch (e) { continue; }
     stat[file.name] = { rows: 0, sheets: [] };
     for (const sh of sheets) {
       if (sh.hidden && sheets.length > 1) continue;

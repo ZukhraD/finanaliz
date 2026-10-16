@@ -295,13 +295,60 @@ function evalSpec(spec, f, w) {
 }
 const SRC_TXT = { B: "Баланс (ф.1)", P: "ОПиУ (ф.2)", C: "ОДДС (ф.3)" };
 const PROF_TXT = { 1: "полная форма (приказ №404)", 2: "форма МСБ", 3: "свой вариант", 4: "форма НСФО (малый бизнес)" };
+/* PDF финансовой отчётности (с текстовым слоем) → таблицы, как из Excel: колонки по положению на странице */
+function pdfNum(s) {
+  const t = String(s).replace(/[  ]/g, "").replace(/−|–|—/g, "-").trim();
+  if (/^-+$/.test(t)) return 0;
+  const m = /^(\()?(-)?(\d+(?:[.,]\d+)?)(\))?$/.exec(t.replace(/(?<=\d)[.,](?=\d{3}(?:\D|$))/g, ""));
+  if (!m) return null;
+  const v = parseFloat(m[3].replace(",", "."));
+  return (m[1] && m[4]) || m[2] ? -v : v;
+}
+function pdfToSheets(pdf) {
+  const sheets = [];
+  pdf.pages.forEach((pg, pi) => {
+    const lines = pg.lines || []; if (!lines.length) return;
+    // якоря колонок: числа — по правому краю, текст и коды — по левому
+    const anc = [];
+    for (const l of lines) for (const c of l.cells || []) { const isNum = pdfNum(c.s) !== null && !/^\d{3}$/.test(c.s.trim()); anc.push({ a: isNum ? c.x2 : c.x, num: isNum }); }
+    const cols = [];
+    for (const a of anc.sort((x, y) => x.a - y.a)) { const c = cols.find(z => z.num === a.num && Math.abs(z.a - a.a) < 14); if (c) { c.a = (c.a * c.n + a.a) / (c.n + 1); c.n++; } else cols.push({ a: a.a, num: a.num, n: 1 }); }
+    const order = cols.slice().sort((x, y) => x.a - y.a);
+    const rows = [undefined];
+    for (const l of lines.slice().sort((x, y) => y.y - x.y)) {
+      const row = [];
+      const hasCode = (l.cells || []).some(c => /^\d{3}$/.test(c.s.trim()));
+      for (const c of l.cells || []) {
+        const v = pdfNum(c.s), isNum = v !== null && !/^\d{3}$/.test(c.s.trim());
+        const a = isNum ? c.x2 : c.x;
+        let best = 0, bd = 1e9; order.forEach((z, j) => { if (z.num === isNum) { const d = Math.abs(z.a - a); if (d < bd) { bd = d; best = j; } } });
+        let col = best + 1; while (row[col] !== undefined) col++;
+        // «Выручка 010» — название и код строки слиплись в одну ячейку
+        const sp = !isNum && !hasCode && /^(.*[А-Яа-яЁёA-Za-z)\s.])\s*(\d{3})$/.exec(c.s);
+        if (sp && sp[1].trim().length > 2) { row[col] = sp[1].trim(); let c2 = col + 1; while (row[c2] !== undefined) c2++; row[c2] = sp[2]; }
+        else row[col] = isNum ? v : c.s;
+      }
+      rows.push(row);
+    }
+    sheets.push({ name: "стр. " + (pi + 1), rows, hidden: false });
+  });
+  return sheets;
+}
+async function readFormFile(file) {
+  if (/\.pdf$/i.test(file.name)) {
+    const pdf = await PdfReader.read(await file.arrayBuffer());
+    if (pdf.noText) throw new Error("это скан (в PDF нет текста) — сайт читает только PDF с текстовым слоем; распознайте скан в программе (например, ABBYY FineReader) или загрузите Excel");
+    return pdfToSheets(pdf);
+  }
+  return readWorkbook(await file.arrayBuffer());
+}
 async function importFiles(files, k, pid, askUnits, forced) {
   const report = [];
   const pp = prevPid(pid);
   for (const file of files) {
-    if (!/\.(xlsx|xlsm|xls)$/i.test(file.name)) { report.push({ file: file.name, err: "формат не поддерживается — нужен Excel (.xlsx, .xlsm, .xls)" }); continue; }
+    if (!/\.(xlsx|xlsm|xls|pdf)$/i.test(file.name)) { report.push({ file: file.name, err: "формат не поддерживается — нужен Excel (.xlsx, .xlsm, .xls) или PDF" }); continue; }
     let sheets;
-    try { sheets = await readWorkbook(await file.arrayBuffer()); } catch (e) { report.push({ file: file.name, err: "не удалось прочитать: " + e.message }); continue; }
+    try { sheets = await readFormFile(file); } catch (e) { report.push({ file: file.name, err: "не удалось прочитать: " + e.message }); continue; }
     const parsed = [], used = [], eqSheets = [];
     let lastKind = null;
     for (const sh of sheets) {

@@ -455,7 +455,7 @@ const UNITS_LAST = () => { try { return localStorage.getItem("finkz.units.last")
 async function importDialog() {
   const persOpts = C.periods.map((p, i) => `<option value="${p.id}"${i === C.periods.length - 1 ? " selected" : ""}>${esc(p.label)}</option>`).join("");
   const compsOpts = C.companies.map((x, i) => `<option value="${i + 1}"${COMP_TAB === i + 1 ? " selected" : ""}>К${i + 1} · ${esc(x.name || "без названия")}</option>`).join("");
-  const body = `<p class="muted">Баланс, ОПиУ, ОДДС и расшифровки в Excel (.xlsx, .xlsm, .xls) — можно сразу несколько файлов одной компании за один период. Из расшифровок берутся износ и амортизация, разовые доходы и расходы, дивиденды и ФОТ. Файлы читаются здесь же, в браузере, и никуда не отправляются.</p>
+  const body = `<p class="muted">Баланс, ОПиУ, ОДДС и расшифровки в Excel (.xlsx, .xlsm, .xls) или PDF с текстом — можно сразу несколько файлов одной компании за один период. Из расшифровок берутся износ и амортизация, разовые доходы и расходы, дивиденды и ФОТ. Файлы читаются здесь же, в браузере, и никуда не отправляются.</p>
     <div class="grid2" style="margin:12px 0"><label class="f"><span>Компания</span><select class="inp" id="iComp">${compsOpts}</select></label><label class="f"><span>Период</span><select class="inp" id="iPer">${persOpts}</select></label></div>
     <div class="f" style="margin:4px 0 12px"><span>В каких единицах суммы в файлах отчётности?</span>
       <div class="chips" role="radiogroup" id="iUnits">${[["k", "тыс. тг — сохранить как есть"], ["t", "тг — перевести в тыс. тг"]].map(([v, t]) => `<label class="btn"><input type="radio" name="iu" value="${v}" ${UNITS_LAST() === v ? "checked" : ""}> ${t}</label>`).join("")}</div></div>
@@ -471,7 +471,11 @@ async function importDialog() {
   });
   const sel = await dialog("Загрузить формы отчётности", body, [{ t: "Отменить", v: null }, { t: "Загрузить", primary: true, v: () => ({ k: +$("#iComp").value, pid: $("#iPer").value, u: document.querySelector("input[name=iu]:checked")?.value || "" }) }]);
   if (!sel || !files.length) { if (sel) toast("Файлы не выбраны"); return; }
-  const pdfs = files.filter(f => /\.pdf$/i.test(f.name)); files = files.filter(f => !/\.pdf$/i.test(f.name));
+  // PDF: декларации, выписки, справки и кредитные отчёты — на «Налоги»/«Банк»/«Кредитная история»; остальные — как формы отчётности
+  let pdfs = files.filter(f => /\.pdf$/i.test(f.name)); files = files.filter(f => !/\.pdf$/i.test(f.name));
+  for (const f of pdfs.slice()) {
+    try { const r = await DocParse.read(await f.arrayBuffer()); if (!r.kind && !r.pdf.noText) { const sh = pdfToSheets(r.pdf); if (sh.some(x => ["B", "P", "C", "X"].includes(detectKind(x)))) { files.push(f); pdfs = pdfs.filter(x => x !== f); } } else if (!r.kind && r.pdf.noText) { files.push(f); pdfs = pdfs.filter(x => x !== f); } } catch (e) { /* разберётся ниже */ }
+  }
   if (pdfs.length && !files.length) return runDocImport(pdfs, sel.k);
   if (!sel.u) { const f = await askUnits(files.map(f => f.name).join(", "), 0, ""); if (!f) return; sel.u = f === 0.001 ? "t" : f === 1000 ? "m" : "k"; }
   try { localStorage.setItem("finkz.units.last", sel.u); } catch (e) { /* не важно */ }
