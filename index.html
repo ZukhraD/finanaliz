@@ -1358,6 +1358,8 @@ const OKED_DIV = {
   "99": "Деятельность экстерриториальных организаций и органов",
 };
 const OKED_KEY = "finkz.oked.v1", MAX_OKED = 5;
+const KZ_LET = /[ӘәІіҢңҒғҮүҰұҚқӨөҺһ]/;
+const okedKz = () => { const v = Object.values(OKED); return v.length > 20 && v.filter(x => KZ_LET.test(x)).length > v.length * 0.3; };
 let OKED = (() => { try { return JSON.parse(localStorage.getItem(OKED_KEY) || "{}"); } catch (e) { return {}; } })();
 const okedDigits = s => String(s ?? "").replace(/\D/g, "").slice(0, 5);
 const okedFmt = d => (d.length <= 2 ? d : d.length <= 4 ? d.slice(0, 2) + "." + d.slice(2) : d.slice(0, 2) + "." + d.slice(2, 4) + "." + d.slice(4));
@@ -1374,17 +1376,23 @@ function okedLookup(code) {
 async function loadOkedFile(file) {
   const sheets = await readWorkbook(await file.arrayBuffer());
   const out = {};
-  for (const sh of sheets) for (const row of sh.rows) {
+  for (const sh of sheets) {
+    // колонка с русским наименованием по заголовку («Наименование на русском», «рус», «ru»)
+    let ruCol = -1;
+    for (const row of sh.rows.slice(0, 15)) { if (!row) continue; row.forEach((x, j) => { if (ruCol < 0 && typeof x === "string" && /(русск|(?:^|[^а-яё])рус(?![а-яё])|(?:^|[^a-z])ru(?![a-z])|name_?ru)/i.test(x) && !/казах|қазақ/i.test(x)) ruCol = j; }); }
+    for (const row of sh.rows) {
     if (!row) continue;
     for (let c = 1; c < row.length; c++) {
       const v = row[c]; if (v === undefined) continue;
       const s = String(v).trim();
       if (!/^\d{2}(\.\d{1,2}){0,2}$/.test(s) && !/^\d{2,5}$/.test(s)) continue;
-      const name = row.slice(c + 1).find(x => typeof x === "string" && /[А-Яа-яЁё]/.test(x) && x.trim().length > 3);
+      const cands = row.slice(c + 1).filter(x => typeof x === "string" && /[А-Яа-яЁё]/.test(x) && x.trim().length > 3);
+      const byCol = ruCol > c && typeof row[ruCol] === "string" && row[ruCol].trim().length > 3 ? row[ruCol] : null;
+      const name = byCol || cands.find(x => !KZ_LET.test(x)) || cands[cands.length - 1];
       if (name) { const d = okedDigits(s); if (d.length >= 2 && !out[d]) out[d] = name.trim().replace(/\s+/g, " "); }
       break;
     }
-  }
+  } }
   const n = Object.keys(out).length;
   if (n < 50) throw new Error("в файле не найден классификатор ОКЭД (нужны колонки «код» и «наименование»)");
   OKED = out;
@@ -3911,11 +3919,13 @@ function prgParse(j) {
   const at = re => L.findIndex(l => re.test(l));
   const next = re => { const i = at(re); return i >= 0 ? (L[i + 1] || "") : ""; };
   const date = s => (/(\d{2}\.\d{2}\.\d{4})/.exec(s || "") || [])[1] || "";
-  const p = { name: j.h1 || "", url: j.url };
+  const ruName = (() => { const i = at(/^название\s+организации$/i); const r = i >= 0 ? L.slice(i + 1, i + 8).find(l => /^рус\s+/i.test(l)) : ""; return r ? r.replace(/^рус\s+/i, "") : ""; })();
+  const p = { name: ruName || j.h1 || "", url: j.url };
   p.regDate = date(next(/^первичная\s+регистрация$/i)) || date(next(/^дата\s+(первичной\s+)?регистрации$/i));
   p.director = next(/^руководитель(\s+компании)?$/i).replace(/^(рус|қаз)\s+/i, "");
   p.krp = next(/^крп$/i); p.kse = next(/^ксе$/i); p.kfs = next(/^кфс$/i);
-  const ok = next(/^основной\s+окэд$/i), mo = /^(\d{5})\s*(.*)$/.exec(ok);
+  const okList = (() => { const i = at(/^основной\s+окэд$/i); if (i < 0) return []; const r = []; for (let n = i + 1; n < Math.min(L.length, i + 6) && !/^проверено/i.test(L[n]); n++) if (/^(рус\s+|қаз\s+)?\d{5}/i.test(L[n])) r.push(L[n].replace(/^(рус|қаз)\s+/i, "")); return r; })();
+  const ok = okList.find(l => !KZ_LET.test(l)) || okList[0] || "", mo = /^(\d{5})\s*(.*)$/.exec(ok);
   p.okedCode = mo ? mo[1] : ""; p.okedName = mo ? mo[2] : "";
   p.secondOkeds = []; { const i = at(/^вторичн\S*\s+окэд$/i); if (i >= 0) for (let n = i + 1; n < L.length && /^\d{5}(\s|$)/.test(L[n]); n++) p.secondOkeds.push(L[n].slice(0, 5)); }
   { const i = at(/^юридический\s+адрес$/i); if (i >= 0) p.address = (L.slice(i + 1, i + 4).find(l => /^рус\s/i.test(l)) || L[i + 1] || "").replace(/^рус\s+/i, ""); }
@@ -3996,7 +4006,7 @@ async function binLookup(i) {
   if (p.address) { t.address = p.address; done.push("адрес"); }
   if (/^(да|нет)$/i.test(p.vat)) { x.vat = /^да$/i.test(p.vat) ? "Да" : "Нет"; done.push("плательщик НДС"); }
   if (p.regime) { const rg = /общеустанов/i.test(p.regime) ? "Общеустановленный" : /упрощ/i.test(p.regime) ? "Упрощённая декларация" : "Иной специальный режим"; if (S.lists.regime.includes(rg)) { x.regime = rg; done.push("налоговый режим"); } }
-  if (i === 0 && p.okedCode) { const codes = [p.okedCode, ...p.secondOkeds].slice(0, MAX_OKED); C.card.oked = codes.map((c, n) => ({ code: okedFmt(okedDigits(c)), name: (n === 0 && p.okedName) || okedLookup(c)?.name || "" })); done.push("ОКЭД"); }
+  if (i === 0 && p.okedCode) { const codes = [p.okedCode, ...p.secondOkeds].slice(0, MAX_OKED); C.card.oked = codes.map((c, n) => ({ code: okedFmt(okedDigits(c)), name: (() => { const a = n === 0 ? p.okedName : "", b = okedLookup(c)?.name || "", d = OKED_DIV[okedDigits(c).slice(0, 2)] || ""; return [a, b].find(z => z && !KZ_LET.test(z)) || (KZ_LET.test(a + b) ? d : a || b) || ""; })() })); done.push("ОКЭД"); }
   for (const [id, it] of Object.entries(p.items)) t.items[id] = it;
   const afm = afmCheck(k, p.name); if (afm) { t.items.terror = afm; if (afm.st === "yes") p.hits.push(afm.note.replace(/^ВЫЯВЛЕНО:\s*/, "")); }
   t.prg = { url: p.url, date: isoToday(), krp: p.krp, kse: p.kse, kfs: p.kfs, vat: p.vat, regime: p.regime, taxes: p.taxes, debt: p.debt };
@@ -4296,13 +4306,13 @@ function okedPanel() {
   if (!C.card.oked || !C.card.oked.length) C.card.oked = [{ code: "", name: "" }];
   const n = Object.keys(OKED).length;
   const rows = C.card.oked.map((o, i) => {
-    const nm = o.manual ? o.name : (okedLookup(o.code)?.name || o.name || "");
+    const lk = okedLookup(o.code)?.name, nm = o.manual ? o.name : (lk && !(KZ_LET.test(lk) && o.name && !KZ_LET.test(o.name)) ? lk : o.name || lk || "");
     return `<tr><td class="lab">${i === 0 ? "Основной" : "Доп. " + i}</td>
       <td><input class="inp" data-oked="${i}" data-f="code" value="${esc(o.code)}" placeholder="например, 46.90.0" inputmode="numeric" style="max-width:150px"></td>
       <td><input class="inp" data-oked="${i}" data-f="name" value="${esc(nm)}" placeholder="наименование подставится по коду"><span class="small muted" data-okedhint="${i}">${esc(okedHint(o.code))}</span></td>
       <td>${C.card.oked.length > 1 ? `<button class="btn ghost danger" data-deloked="${i}">Удалить</button>` : ""}</td></tr>`;
   }).join("");
-  return `<section class="panel"><h2>Виды деятельности (ОКЭД)</h2><p class="hint">До ${MAX_OKED} кодов на клиента; первый — основной. Наименование подставляется по коду, его можно поправить вручную. ${n ? `Справочник ОКЭД загружен: ${nf0.format(n)} кодов.` : "Сейчас встроены только разделы (первые 2 цифры). Чтобы подтягивались точные наименования, один раз загрузите справочник ОКЭД на странице «Настройка загрузки»."}</p>
+  return `<section class="panel"><h2>Виды деятельности (ОКЭД)</h2><p class="hint">До ${MAX_OKED} кодов на клиента; первый — основной. Наименование подставляется по коду, его можно поправить вручную. ${n ? `Справочник ОКЭД загружен: ${nf0.format(n)} кодов.${okedKz() ? " <b>Наименования в справочнике на казахском — загрузите его заново на странице «Настройка загрузки», будут взяты русские.</b>" : ""}` : "Сейчас встроены только разделы (первые 2 цифры). Чтобы подтягивались точные наименования, один раз загрузите справочник ОКЭД на странице «Настройка загрузки»."}</p>
     <div class="tablewrap" style="max-height:none"><table class="data form oked"><thead><tr><th class="lab">Вид</th><th style="text-align:left">Код ОКЭД</th><th style="text-align:left">Наименование</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
     ${C.card.oked.length < MAX_OKED ? `<p style="margin-top:10px"><button class="btn" data-act="addoked">Добавить код ОКЭД</button></p>` : ""}</section>`;
 }
@@ -4549,7 +4559,7 @@ function pageMap() {
     <label class="f"><span>Предыдущий период из второй колонки формы</span><select class="inp" data-set="prev"><option value="0"${!st.prev ? " selected" : ""}>Не загружать</option><option value="1"${st.prev ? " selected" : ""}>Загружать, если ячейки пусты</option></select></label></div>
     <p class="hint" style="margin-top:12px">Анализатор считает в тыс. тг. При автоматическом режиме единицы файла определяются по масштабу других периодов компании или по величине чисел, и значения сразу приводятся к тыс. тг; в журнале видно, что было сделано.</p>
     <p class="hint">Синтаксис кодов: 010 — как в форме; *011 — по модулю; -025 — вычесть по модулю; !200 — вычесть со знаком; #текст — строка «в том числе» без кода, название которой содержит текст. Коды 010 и 10 — одно и то же.</p></section>
-  <section class="panel"><h2>Справочник ОКЭД</h2><p class="hint">${Object.keys(OKED).length ? `Загружен: ${nf0.format(Object.keys(OKED).length)} кодов. Хранится в этом браузере и действует для всех клиентов.` : "Не загружен — по коду подставляется только название раздела (2 знака)."} Загрузите классификатор ОКЭД в Excel (.xlsx или .xls), например с сайта Бюро национальной статистики: колонки кода и наименования найдутся сами.</p>
+  <section class="panel"><h2>Справочник ОКЭД</h2><p class="hint">${Object.keys(OKED).length ? `Загружен: ${nf0.format(Object.keys(OKED).length)} кодов. Хранится в этом браузере и действует для всех клиентов.${okedKz() ? " <b>Сейчас наименования на казахском — загрузите файл заново: сайт возьмёт колонку на русском.</b>" : ""}` : "Не загружен — по коду подставляется только название раздела (2 знака)."} Загрузите классификатор ОКЭД в Excel (.xlsx или .xls), например с сайта Бюро национальной статистики: колонки кода и наименования найдутся сами.</p>
     <button class="btn" data-act="okedfile">${Object.keys(OKED).length ? "Обновить справочник ОКЭД" : "Загрузить справочник ОКЭД"}</button></section>
   ${afmPanel()}
   <div class="tablewrap"><table class="data"><thead><tr><th class="lab">Строка анализатора</th><th style="text-align:left">Полная форма</th><th style="text-align:left">Форма МСБ</th><th style="text-align:left">НСФО (малый бизнес)</th><th style="text-align:left">Свой вариант</th></tr></thead><tbody>${rows}</tbody></table></div>`;
@@ -4680,7 +4690,7 @@ document.addEventListener("click", async e => {
     case "addperfirst": { const f = C.periods[0], y = parseInt(f?.date?.slice(0, 4) || new Date().getFullYear(), 10) - 1; C.periods.unshift({ id: uid(), label: String(y), date: `${y}-12-31`, basis: "Годовой", months: 12 }); touch(); render(); break; }
     case "importdlg": importDialog(); break;
     case "addoked": if (C.card.oked.length < MAX_OKED) C.card.oked.push({ code: "", name: "" }); touch(); render(); break;
-    case "okedfile": { const inp = document.createElement("input"); inp.type = "file"; inp.accept = ".xlsx,.xlsm,.xls"; inp.onchange = async () => { try { const n = await loadOkedFile(inp.files[0]); toast("Справочник ОКЭД загружен: " + nf0.format(n) + " кодов"); render(); } catch (err) { toast("Не удалось загрузить справочник: " + err.message); } }; inp.click(); break; }
+    case "okedfile": { const inp = document.createElement("input"); inp.type = "file"; inp.accept = ".xlsx,.xlsm,.xls"; inp.onchange = async () => { try { const n = await loadOkedFile(inp.files[0]); if (C && C.card.oked) { for (const o of C.card.oked) if (!o.manual && o.code && (!o.name || KZ_LET.test(o.name))) o.name = okedLookup(o.code)?.name || o.name; touch(); } toast("Справочник ОКЭД загружен: " + nf0.format(n) + " кодов"); render(); } catch (err) { toast("Не удалось загрузить справочник: " + err.message); } }; inp.click(); break; }
     case "addloan": { const f = fcParams(); f.loans = f.loans || []; if (!f.loans.length) { const d = ratio(C.obj, "debt", lastPid()); if (isNum(d) && d > 0) f.loans.push({ name: "Долг по балансу", bal: d, rate: f.aggRate, rem: f.aggTerm, scheme: "Дифференцированный", grace: 0 }); else f.loans.push({ name: "", bal: 0, rate: 0.16, rem: 36, scheme: "Дифференцированный", grace: 0 }); } else f.loans.push({ name: "", bal: 0, rate: 0.16, rem: 36, scheme: "Дифференцированный", grace: 0 }); touch(); render(); break; }
     case "addproj": { const f = fcParams(); f.projects = f.projects || []; f.projects.push({ name: "", amt: 0, start: 3, dur: 3, own: 0.3 }); touch(); render(); break; }
     case "word": exportWord(); break;

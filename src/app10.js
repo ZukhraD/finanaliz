@@ -229,11 +229,13 @@ function prgParse(j) {
   const at = re => L.findIndex(l => re.test(l));
   const next = re => { const i = at(re); return i >= 0 ? (L[i + 1] || "") : ""; };
   const date = s => (/(\d{2}\.\d{2}\.\d{4})/.exec(s || "") || [])[1] || "";
-  const p = { name: j.h1 || "", url: j.url };
+  const ruName = (() => { const i = at(/^название\s+организации$/i); const r = i >= 0 ? L.slice(i + 1, i + 8).find(l => /^рус\s+/i.test(l)) : ""; return r ? r.replace(/^рус\s+/i, "") : ""; })();
+  const p = { name: ruName || j.h1 || "", url: j.url };
   p.regDate = date(next(/^первичная\s+регистрация$/i)) || date(next(/^дата\s+(первичной\s+)?регистрации$/i));
   p.director = next(/^руководитель(\s+компании)?$/i).replace(/^(рус|қаз)\s+/i, "");
   p.krp = next(/^крп$/i); p.kse = next(/^ксе$/i); p.kfs = next(/^кфс$/i);
-  const ok = next(/^основной\s+окэд$/i), mo = /^(\d{5})\s*(.*)$/.exec(ok);
+  const okList = (() => { const i = at(/^основной\s+окэд$/i); if (i < 0) return []; const r = []; for (let n = i + 1; n < Math.min(L.length, i + 6) && !/^проверено/i.test(L[n]); n++) if (/^(рус\s+|қаз\s+)?\d{5}/i.test(L[n])) r.push(L[n].replace(/^(рус|қаз)\s+/i, "")); return r; })();
+  const ok = okList.find(l => !KZ_LET.test(l)) || okList[0] || "", mo = /^(\d{5})\s*(.*)$/.exec(ok);
   p.okedCode = mo ? mo[1] : ""; p.okedName = mo ? mo[2] : "";
   p.secondOkeds = []; { const i = at(/^вторичн\S*\s+окэд$/i); if (i >= 0) for (let n = i + 1; n < L.length && /^\d{5}(\s|$)/.test(L[n]); n++) p.secondOkeds.push(L[n].slice(0, 5)); }
   { const i = at(/^юридический\s+адрес$/i); if (i >= 0) p.address = (L.slice(i + 1, i + 4).find(l => /^рус\s/i.test(l)) || L[i + 1] || "").replace(/^рус\s+/i, ""); }
@@ -314,7 +316,7 @@ async function binLookup(i) {
   if (p.address) { t.address = p.address; done.push("адрес"); }
   if (/^(да|нет)$/i.test(p.vat)) { x.vat = /^да$/i.test(p.vat) ? "Да" : "Нет"; done.push("плательщик НДС"); }
   if (p.regime) { const rg = /общеустанов/i.test(p.regime) ? "Общеустановленный" : /упрощ/i.test(p.regime) ? "Упрощённая декларация" : "Иной специальный режим"; if (S.lists.regime.includes(rg)) { x.regime = rg; done.push("налоговый режим"); } }
-  if (i === 0 && p.okedCode) { const codes = [p.okedCode, ...p.secondOkeds].slice(0, MAX_OKED); C.card.oked = codes.map((c, n) => ({ code: okedFmt(okedDigits(c)), name: (n === 0 && p.okedName) || okedLookup(c)?.name || "" })); done.push("ОКЭД"); }
+  if (i === 0 && p.okedCode) { const codes = [p.okedCode, ...p.secondOkeds].slice(0, MAX_OKED); C.card.oked = codes.map((c, n) => ({ code: okedFmt(okedDigits(c)), name: (() => { const a = n === 0 ? p.okedName : "", b = okedLookup(c)?.name || "", d = OKED_DIV[okedDigits(c).slice(0, 2)] || ""; return [a, b].find(z => z && !KZ_LET.test(z)) || (KZ_LET.test(a + b) ? d : a || b) || ""; })() })); done.push("ОКЭД"); }
   for (const [id, it] of Object.entries(p.items)) t.items[id] = it;
   const afm = afmCheck(k, p.name); if (afm) { t.items.terror = afm; if (afm.st === "yes") p.hits.push(afm.note.replace(/^ВЫЯВЛЕНО:\s*/, "")); }
   t.prg = { url: p.url, date: isoToday(), krp: p.krp, kse: p.kse, kfs: p.kfs, vat: p.vat, regime: p.regime, taxes: p.taxes, debt: p.debt };

@@ -36,6 +36,8 @@ const OKED_DIV = {
   "99": "Деятельность экстерриториальных организаций и органов",
 };
 const OKED_KEY = "finkz.oked.v1", MAX_OKED = 5;
+const KZ_LET = /[ӘәІіҢңҒғҮүҰұҚқӨөҺһ]/;
+const okedKz = () => { const v = Object.values(OKED); return v.length > 20 && v.filter(x => KZ_LET.test(x)).length > v.length * 0.3; };
 let OKED = (() => { try { return JSON.parse(localStorage.getItem(OKED_KEY) || "{}"); } catch (e) { return {}; } })();
 const okedDigits = s => String(s ?? "").replace(/\D/g, "").slice(0, 5);
 const okedFmt = d => (d.length <= 2 ? d : d.length <= 4 ? d.slice(0, 2) + "." + d.slice(2) : d.slice(0, 2) + "." + d.slice(2, 4) + "." + d.slice(4));
@@ -52,17 +54,23 @@ function okedLookup(code) {
 async function loadOkedFile(file) {
   const sheets = await readWorkbook(await file.arrayBuffer());
   const out = {};
-  for (const sh of sheets) for (const row of sh.rows) {
+  for (const sh of sheets) {
+    // колонка с русским наименованием по заголовку («Наименование на русском», «рус», «ru»)
+    let ruCol = -1;
+    for (const row of sh.rows.slice(0, 15)) { if (!row) continue; row.forEach((x, j) => { if (ruCol < 0 && typeof x === "string" && /(русск|(?:^|[^а-яё])рус(?![а-яё])|(?:^|[^a-z])ru(?![a-z])|name_?ru)/i.test(x) && !/казах|қазақ/i.test(x)) ruCol = j; }); }
+    for (const row of sh.rows) {
     if (!row) continue;
     for (let c = 1; c < row.length; c++) {
       const v = row[c]; if (v === undefined) continue;
       const s = String(v).trim();
       if (!/^\d{2}(\.\d{1,2}){0,2}$/.test(s) && !/^\d{2,5}$/.test(s)) continue;
-      const name = row.slice(c + 1).find(x => typeof x === "string" && /[А-Яа-яЁё]/.test(x) && x.trim().length > 3);
+      const cands = row.slice(c + 1).filter(x => typeof x === "string" && /[А-Яа-яЁё]/.test(x) && x.trim().length > 3);
+      const byCol = ruCol > c && typeof row[ruCol] === "string" && row[ruCol].trim().length > 3 ? row[ruCol] : null;
+      const name = byCol || cands.find(x => !KZ_LET.test(x)) || cands[cands.length - 1];
       if (name) { const d = okedDigits(s); if (d.length >= 2 && !out[d]) out[d] = name.trim().replace(/\s+/g, " "); }
       break;
     }
-  }
+  } }
   const n = Object.keys(out).length;
   if (n < 50) throw new Error("в файле не найден классификатор ОКЭД (нужны колонки «код» и «наименование»)");
   OKED = out;
