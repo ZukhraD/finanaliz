@@ -4,7 +4,7 @@ const $ = (s, el = document) => el.querySelector(s);
 let PAGE = "card", COMP_TAB = 1, AN_TAB = "rat", FC_TAB = 0;
 const SEV = { crit: "Критично", risk: "Риск", chk: "Проверить", nd: "Нет данных" };
 function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.add("on"); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("on"), 2600); }
-function paintSaved() { const el = $("#saved"); if (el && lastSaved) el.textContent = "Сохранено в этом браузере, " + lastSaved.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }); }
+function paintSaved() { const el = $("#saved"); if (el && lastSaved) el.textContent = "Сохранено в этом браузере, " + dTime(lastSaved); }
 const opts = (list, cur) => list.map(x => `<option value="${esc(x)}"${String(x) === String(cur) ? " selected" : ""}>${esc(x)}</option>`).join("");
 const stChip = (s, txt) => `<span class="st ${s}">${esc(txt ?? ST[s] ?? "")}</span>`;
 const CHK_TXT = { ok: ["ok", "ОК"], bad: ["crit", "Расхождение"], nd: ["nd", "нет данных"], na: ["nd", "—"] };
@@ -70,7 +70,7 @@ function renderClients() {
   const okedOf = c => (c.card.oked && c.card.oked[0] && c.card.oked[0].code ? "ОКЭД " + c.card.oked[0].code + (c.card.oked[0].name ? " · " + okedNameL(c.card.oked[0].code, c.card.oked[0].name) : "") : (c.card.activity || ""));
   const stOf = c => { const s = c.concl?.status || "Черновик"; return s === "Утверждено" ? ["ok", s] : s === "На проверке" ? ["chk", s] : ["nd", s]; };
   const done = list.filter(c => c.concl?.status === "Утверждено").length;
-  const when = d => new Date(d).toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
+  const when = d => dDayMonth(d);
   const rows = list.map(c => `<li class="crow" data-q="${esc((c.card.name + " " + okedOf(c) + " " + (c.card.bin || "")).toLowerCase())}">
       <div class="cmain"><b>${esc(c.card.name)}</b>${c.demo ? ' <span class="tag">пример</span>' : ""}<span class="cmeta">${esc(okedOf(c))}</span></div>
       <div class="cfacts"><span><i>Компаний</i>${c.companies.length}</span><span><i>Периоды</i>${esc(c.periods.map(p => p.label).join(", "))}</span><span><i>Изменён</i>${esc(when(c.updated))}</span></div>
@@ -411,10 +411,10 @@ function pageMap() {
   <div class="tablewrap"><table class="data"><thead><tr><th class="lab">Строка анализатора</th><th style="text-align:left">Полная форма</th><th style="text-align:left">Форма МСБ</th><th style="text-align:left">НСФО (малый бизнес)</th><th style="text-align:left">Свой вариант</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 function pageLog() {
-  const rows = C.log.map(r => `<tr><td class="lab" style="min-width:150px">${new Date(r.t).toLocaleString("ru-RU")}</td><td style="text-align:left">${esc(r.file)}${r.sheet ? " / " + esc(r.sheet) : ""}</td><td style="text-align:left">${esc([r.comp, r.per].filter(Boolean).join(", "))}</td>
+  const rows = C.log.map(r => `<tr><td class="lab" style="min-width:150px">${dDateTime(r.t)}</td><td style="text-align:left">${esc(r.file)}${r.sheet ? " / " + esc(r.sheet) : ""}</td><td style="text-align:left">${esc([r.comp, r.per].filter(Boolean).join(", "))}</td>
     <td style="text-align:left;white-space:normal">${r.err ? stChip("crit", "ошибка") + " " + esc(r.err) : r.kind === "PDF" ? stChip("ok", "PDF") + " " + esc(r.note || "") : `${stChip("ok", SRC_TXT[r.kind])} ${r.n} строк; ${esc(r.prof)}; ${esc(r.units)}${r.over ? "; перезаписано " + r.over : ""}${r.miss?.length ? "; нет кодов: " + esc(r.miss.join(", ")) : ""}`}</td></tr>`).join("");
   const pl = pid => C.periods.find(p => p.id === pid)?.label || "?";
-  const ed = (C.edits || []).map(r => `<tr><td class="lab" style="min-width:150px">${new Date(r.t).toLocaleString("ru-RU")}</td><td style="text-align:left">${esc(compName(r.k))}, ${esc(pl(r.pid))}</td><td style="text-align:left;white-space:normal">${esc(LINE[r.key]?.label || r.key)}</td><td>${r.old === null ? "пусто" : fmt(r.old)}</td><td>${r.v === null ? "пусто" : fmt(r.v)}</td><td style="text-align:left">${r.src ? "загружено из " + esc(r.src) : "ввод вручную"}</td></tr>`).join("");
+  const ed = (C.edits || []).map(r => `<tr><td class="lab" style="min-width:150px">${dDateTime(r.t)}</td><td style="text-align:left">${esc(compName(r.k))}, ${esc(pl(r.pid))}</td><td style="text-align:left;white-space:normal">${esc(LINE[r.key]?.label || r.key)}</td><td>${r.old === null ? "пусто" : fmt(r.old)}</td><td>${r.v === null ? "пусто" : fmt(r.v)}</td><td style="text-align:left">${r.src ? "загружено из " + esc(r.src) : "ввод вручную"}</td></tr>`).join("");
   return `<div class="pagehead"><div class="lead"><h1>Журнал</h1><p>Загрузки файлов и ручные изменения цифр в формах — для проверки и отчёта.</p></div></div>
   <section class="panel"><h2>Ручные изменения (${(C.edits || []).length})</h2>${ed ? `<div class="tablewrap"><table class="data"><thead><tr><th class="lab">Когда</th><th style="text-align:left">Компания, период</th><th style="text-align:left">Строка</th><th>Было</th><th>Стало</th><th style="text-align:left">Источник значения</th></tr></thead><tbody>${ed}</tbody></table></div>` : `<p class="muted">Изменений вручную пока не было.</p>`}</section>
   <section class="panel"><h2>Загрузки</h2>${rows ? `<div class="tablewrap"><table class="data"><thead><tr><th class="lab">Когда</th><th style="text-align:left">Файл</th><th style="text-align:left">Куда</th><th style="text-align:left">Результат</th></tr></thead><tbody>${rows}</tbody></table></div>` : `<p class="muted">Загрузок пока не было.</p>`}</section>`;

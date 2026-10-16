@@ -6,6 +6,13 @@
 const LANG_KEY = "finkz.lang";
 let LANG = (() => { try { return localStorage.getItem(LANG_KEY) === "kz" ? "kz" : "ru"; } catch (e) { return "ru"; } })();
 const I18N = window.I18N_KZ || {};
+const LOC = () => (LANG === "kz" ? "kk-KZ" : "ru-RU");
+const KZ_MON = ["қаңтар", "ақпан", "наурыз", "сәуір", "мамыр", "маусым", "шілде", "тамыз", "қыркүйек", "қазан", "қараша", "желтоқсан"];
+const p2 = n => String(n).padStart(2, "0");
+// даты без зависимости от языковых данных браузера: казахские месяцы — свои
+const dDayMonth = d => { d = new Date(d); return LANG === "kz" ? `${d.getDate()} ${KZ_MON[d.getMonth()]}` : d.toLocaleDateString("ru-RU", { day: "numeric", month: "long" }); };
+const dTime = d => { d = new Date(d); return `${p2(d.getHours())}:${p2(d.getMinutes())}`; };
+const dDateTime = d => { d = new Date(d); return `${p2(d.getDate())}.${p2(d.getMonth() + 1)}.${d.getFullYear()}, ${dTime(d)}`; };
 const CYR_RE = /[А-Яа-яЁё]/;
 let I18N_RE = null;
 function i18nRe() {
