@@ -94,13 +94,13 @@ function pageTrust() {
     <div class="chips" style="margin-bottom:12px">${stChip(s.crit ? "crit" : "ok", "Стоп-факторы: " + s.crit)} ${stChip(s.risk ? "risk" : "ok", "Риски: " + s.risk)} ${stChip(s.chk ? "chk" : "ok", "Проверить: " + s.chk)} ${stChip(s.na ? "nd" : "ok", "Не проверено: " + s.na)}</div>
     <div class="grid2" style="max-width:900px"><label class="f"><span>Дата регистрации</span><input class="inp" data-trustf="regDate" value="${esc(t.regDate || "")}" placeholder="дд.мм.гггг"></label>
       <label class="f"><span>Руководитель</span><input class="inp" data-trustf="director" value="${esc(t.director || "")}"></label>
-      <label class="f"><span>Юридический адрес</span><input class="inp" data-trustf="address" value="${esc(t.address || "")}"></label>
+      <label class="f"><span>Юридический адрес</span><input class="inp" data-trustf="${LANG === "kz" ? "addressKz" : "address"}" value="${esc(LANG === "kz" ? (t.addressKz || t.address || "") : (t.address || ""))}"></label>
       <label class="f"><span>Дата проверки</span><input class="inp" type="date" data-trustf="date" value="${esc(t.date || "")}"></label>
       <label class="f"><span>Источник</span><input class="inp" data-trustf="source" value="${esc(t.source || (t.src?.length ? t.src[t.src.length - 1].file : ""))}" placeholder="Параграф, КГД, egov…"></label></div>
     ${t.prg ? `<p class="small" style="margin-top:10px">По данным <a href="${esc(t.prg.url)}" target="_blank" rel="noopener noreferrer">Параграфа</a> на ${esc(t.prg.date.split("-").reverse().join("."))}: ${[t.prg.krp && "КРП " + t.prg.krp, t.prg.vat && "плательщик НДС — " + t.prg.vat.toLowerCase(), t.prg.regime && "режим — " + t.prg.regime.toLowerCase(), isNum(t.prg.debt) && "налоговая задолженность " + fmt(t.prg.debt / 1000) + " тыс. тг", t.prg.taxes?.length && "налоговые отчисления, тыс. тг: " + t.prg.taxes.map(z => z.y + " — " + fmt(z.v / 1000)).join(", ")].filter(Boolean).map(esc).join("; ")}.</p>` : ""}
     ${isNum(s.age) ? `<p class="hint" style="margin-top:8px">На рынке ${nf1.format(s.age)} ${s.age < 5 ? "года" : "лет"}.</p>` : ""}
     <div class="tablewrap" style="max-height:none;margin-top:12px"><table class="data trust"><thead><tr><th class="lab">Проверка</th><th>Уровень</th><th>Результат</th><th style="text-align:left">Комментарий / найдено в отчёте</th></tr></thead><tbody>
-    ${TRUST.map(([id, title, sev]) => { const it = t.items[id]; return `<tr class="${it.st === "yes" ? "hit-" + sev : ""}"><td class="lab">${esc(title)}</td><td>${stChip(sev, sev === "crit" ? "стоп-фактор" : sev === "risk" ? "риск" : "проверить")}</td><td>${opt(id, it.st)}</td><td class="cell"><input class="inp" data-trustnote="${id}" value="${esc(it.note || "")}" style="text-align:left"></td></tr>`; }).join("")}
+    ${TRUST.map(([id, title, sev]) => { const it = t.items[id]; return `<tr class="${it.st === "yes" ? "hit-" + sev : ""}"><td class="lab">${esc(title)}</td><td>${stChip(sev, sev === "crit" ? "стоп-фактор" : sev === "risk" ? "риск" : "проверить")}</td><td>${opt(id, it.st)}</td><td class="cell"><input class="inp" data-trustnote="${id}" value="${esc(tr(it.note || ""))}" style="text-align:left"></td></tr>`; }).join("")}
     </tbody></table></div>
     <p class="hint" style="margin-top:10px">Официальные источники для самостоятельной проверки: КГД (задолженность, бездействующие, лжепредприятия, нарушители, банкроты, отсутствующие по адресу), egov (статус, регистрация), реестр должников (ЕРД), портал госзакупок (недобросовестные участники), перечень лиц, связанных с финансированием терроризма.</p></section>`;
 }
@@ -230,7 +230,8 @@ function prgParse(j) {
   const next = re => { const i = at(re); return i >= 0 ? (L[i + 1] || "") : ""; };
   const date = s => (/(\d{2}\.\d{2}\.\d{4})/.exec(s || "") || [])[1] || "";
   const ruName = (() => { const i = at(/^название\s+организации$/i); const r = i >= 0 ? L.slice(i + 1, i + 8).find(l => /^рус\s+/i.test(l)) : ""; return r ? r.replace(/^рус\s+/i, "") : ""; })();
-  const p = { name: ruName || j.h1 || "", url: j.url };
+  const kzName = (() => { const i = at(/^название\s+организации$/i); const r = i >= 0 ? L.slice(i + 1, i + 8).find(l => /^қаз\s+/i.test(l)) : ""; return r ? r.replace(/^қаз\s+/i, "") : ""; })();
+  const p = { name: ruName || j.h1 || "", nameKz: kzName, url: j.url };
   p.regDate = date(next(/^первичная\s+регистрация$/i)) || date(next(/^дата\s+(первичной\s+)?регистрации$/i));
   p.director = next(/^руководитель(\s+компании)?$/i).replace(/^(рус|қаз)\s+/i, "");
   p.krp = next(/^крп$/i); p.kse = next(/^ксе$/i); p.kfs = next(/^кфс$/i);
@@ -238,7 +239,7 @@ function prgParse(j) {
   const ok = okList.find(l => !KZ_LET.test(l)) || okList[0] || "", mo = /^(\d{5})\s*(.*)$/.exec(ok);
   p.okedCode = mo ? mo[1] : ""; p.okedName = mo ? mo[2] : "";
   p.secondOkeds = []; { const i = at(/^вторичн\S*\s+окэд$/i); if (i >= 0) for (let n = i + 1; n < L.length && /^\d{5}(\s|$)/.test(L[n]); n++) p.secondOkeds.push(L[n].slice(0, 5)); }
-  { const i = at(/^юридический\s+адрес$/i); if (i >= 0) p.address = (L.slice(i + 1, i + 4).find(l => /^рус\s/i.test(l)) || L[i + 1] || "").replace(/^рус\s+/i, ""); }
+  { const i = at(/^юридический\s+адрес$/i); if (i >= 0) { p.address = (L.slice(i + 1, i + 4).find(l => /^рус\s/i.test(l)) || L[i + 1] || "").replace(/^рус\s+/i, ""); const kz = L.slice(i + 1, i + 12).find(l => /^қаз\s/i.test(l)); p.addressKz = kz ? kz.replace(/^қаз\s+/i, "") : ""; } }
   p.vat = next(/^плательщик\s+ндс$/i); p.regime = next(/^вид\s+налогового\s+режима$/i);
   p.taxes = []; { const i = at(/^сумма\s+налоговых\s+отчислений$/i); if (i >= 0) for (let n = i + 1; n < Math.min(L.length, i + 80) && !/^(показать|история)/i.test(L[n]); n++) { const y = /^(\d{4})\s*г\.?$/.exec(L[n]); if (y) { const v = parseNum((L[n + 1] || "").replace(/[₸\s]/g, "").replace(",", ".")); if (isNum(v)) p.taxes.push({ y: +y[1], v }); } } }
   p.debt = null; p.debtFull = null;
@@ -314,6 +315,8 @@ async function binLookup(i) {
   if (p.regDate) { t.regDate = p.regDate; done.push("дата регистрации"); }
   if (p.director) { t.director = p.director; done.push("руководитель"); }
   if (p.address) { t.address = p.address; done.push("адрес"); }
+  if (p.addressKz) t.addressKz = p.addressKz;
+  if (p.nameKz) x.nameKz = p.nameKz;
   if (/^(да|нет)$/i.test(p.vat)) { x.vat = /^да$/i.test(p.vat) ? "Да" : "Нет"; done.push("плательщик НДС"); }
   if (p.regime) { const rg = /общеустанов/i.test(p.regime) ? "Общеустановленный" : /упрощ/i.test(p.regime) ? "Упрощённая декларация" : "Иной специальный режим"; if (S.lists.regime.includes(rg)) { x.regime = rg; done.push("налоговый режим"); } }
   if (i === 0 && p.okedCode) { const codes = [p.okedCode, ...p.secondOkeds].slice(0, MAX_OKED); C.card.oked = codes.map((c, n) => ({ code: okedFmt(okedDigits(c)), name: (() => { const a = n === 0 ? p.okedName : "", b = okedLookup(c)?.name || "", d = OKED_DIV[okedDigits(c).slice(0, 2)] || ""; return [a, b].find(z => z && !KZ_LET.test(z)) || (KZ_LET.test(a + b) ? d : a || b) || ""; })() })); done.push("ОКЭД"); }
@@ -324,9 +327,9 @@ async function binLookup(i) {
   const nChk = Object.keys(p.items).length;
   C.log.unshift({ t: new Date().toISOString(), file: "ba.prg.kz", comp: compName(k), per: "", kind: "БИН", note: `заполнено: ${done.join(", ") || "—"}; проверок благонадёжности: ${nChk}${p.hits.length ? "; выявлено: " + p.hits.join("; ") : ""}` });
   touch(); render();
-  const taxes = p.taxes.length ? `<p class="small">Налоговые отчисления: ${p.taxes.map(z => `${z.y} г. — ${fmt(z.v / 1000)} тыс. тг`).join("; ")}.</p>` : "";
+  const taxes = p.taxes.length ? `<p class="small">Налоговые отчисления: ${p.taxes.map(z => `${z.y}: ${fmt(z.v / 1000)}`).join("; ") + " (тыс. тг)"}.</p>` : "";
   await dialog(p.hits.length ? "Данные по БИН загружены — есть риски" : "Данные по БИН загружены",
-    `<p><b>${esc(p.name || x.name)}</b> · БИН ${esc(bin)}</p>
+    `<p><b>${esc((LANG === "kz" && p.nameKz) || p.name || x.name)}</b> · БИН ${esc(bin)}</p>
     ${p.hits.length ? `<p style="color:#b42318"><b>Выявлено:</b> ${esc(p.hits.join("; "))}.</p>` : `<p style="color:#067647"><b>Нарушений не выявлено</b> по ${nChk} проверкам Параграфа.</p>`}
     <p class="small">Заполнено: ${esc(done.join(", ") || "—")}. ${p.krp ? "Размерность: " + esc(p.krp) + "." : ""}</p>${taxes}
     <p class="small muted">Источник: <a href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">страница компании на ba.prg.kz</a>. ${afm ? "" : "Перечень АФМ не загружен — пункт о терроризме и санкциях не проверен (загрузите его на странице «Настройка загрузки»). "}Суды, история изменений и степень риска КГД в автоматическую проверку не входят.</p>`,

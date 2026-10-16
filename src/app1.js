@@ -141,7 +141,7 @@ function demoClient() {
 let C = null;          // открытый клиент
 const nComp = () => C.companies.length;
 const comp = k => C.companies[k - 1];
-const compName = k => (comp(k) && comp(k).name) || `Компания ${k}`;
+const compName = k => (LANG === "kz" && comp(k) && comp(k).nameKz) || (comp(k) && comp(k).name) || `Компания ${k}`;
 function touch() { C.updated = Date.now(); CACHE.clear(); saveAll(); }
 
 /* ---------------------------------------------------------------- расчёт (повторяет формулы Excel-шаблона) */

@@ -37,6 +37,15 @@ const OKED_DIV = {
 };
 const OKED_KEY = "finkz.oked.v1", MAX_OKED = 5;
 const KZ_LET = /[ӘәІіҢңҒғҮүҰұҚқӨөҺһ]/;
+const OKED_KZ_KEY = "finkz.oked.kz.v1";
+let OKED_KZ = (() => { try { return JSON.parse(localStorage.getItem(OKED_KZ_KEY) || "{}"); } catch (e) { return {}; } })();
+// наименование ОКЭД на языке интерфейса: казахское из справочника (если загружено), иначе русское
+function okedNameL(code, ruName) {
+  if (LANG !== "kz") return ruName;
+  const d = okedDigits(code);
+  for (let n = d.length; n >= 2; n--) if (OKED_KZ[d.slice(0, n)]) return OKED_KZ[d.slice(0, n)];
+  return ruName;
+}
 const okedKz = () => { const v = Object.values(OKED); return v.length > 20 && v.filter(x => KZ_LET.test(x)).length > v.length * 0.3; };
 let OKED = (() => { try { return JSON.parse(localStorage.getItem(OKED_KEY) || "{}"); } catch (e) { return {}; } })();
 const okedDigits = s => String(s ?? "").replace(/\D/g, "").slice(0, 5);
@@ -53,10 +62,11 @@ function okedLookup(code) {
 }
 async function loadOkedFile(file) {
   const sheets = await readWorkbook(await file.arrayBuffer());
-  const out = {};
+  const out = {}, outKz = {};
   for (const sh of sheets) {
     // колонка с русским наименованием по заголовку («Наименование на русском», «рус», «ru»)
-    let ruCol = -1;
+    let ruCol = -1, kzCol = -1;
+    for (const row of sh.rows.slice(0, 15)) { if (!row) continue; row.forEach((x, j) => { if (kzCol < 0 && typeof x === "string" && /(казах|қазақ|(?:^|[^а-яё])каз(?![а-яё])|(?:^|[^a-z])kz(?![a-z])|name_?kz|атауы)/i.test(x)) kzCol = j; }); }
     for (const row of sh.rows.slice(0, 15)) { if (!row) continue; row.forEach((x, j) => { if (ruCol < 0 && typeof x === "string" && /(русск|(?:^|[^а-яё])рус(?![а-яё])|(?:^|[^a-z])ru(?![a-z])|name_?ru)/i.test(x) && !/казах|қазақ/i.test(x)) ruCol = j; }); }
     for (const row of sh.rows) {
     if (!row) continue;
@@ -67,17 +77,20 @@ async function loadOkedFile(file) {
       const cands = row.slice(c + 1).filter(x => typeof x === "string" && /[А-Яа-яЁё]/.test(x) && x.trim().length > 3);
       const byCol = ruCol > c && typeof row[ruCol] === "string" && row[ruCol].trim().length > 3 ? row[ruCol] : null;
       const name = byCol || cands.find(x => !KZ_LET.test(x)) || cands[cands.length - 1];
+      const kzName = cands.find(x => x !== name && (KZ_LET.test(x) || (kzCol > c && x === row[kzCol])));
+      if (kzName) { const dk = okedDigits(s); if (dk.length >= 2 && !outKz[dk]) outKz[dk] = kzName.trim().replace(/\s+/g, " "); }
       if (name) { const d = okedDigits(s); if (d.length >= 2 && !out[d]) out[d] = name.trim().replace(/\s+/g, " "); }
       break;
     }
   } }
   const n = Object.keys(out).length;
   if (n < 50) throw new Error("в файле не найден классификатор ОКЭД (нужны колонки «код» и «наименование»)");
-  OKED = out;
+  OKED = out; OKED_KZ = outKz;
+  try { localStorage.setItem(OKED_KZ_KEY, JSON.stringify(outKz)); } catch (e) { /* только до перезагрузки */ }
   try { localStorage.setItem(OKED_KEY, JSON.stringify(out)); } catch (e) { /* справочник работает до перезагрузки */ }
   return n;
 }
-function okedListText(c) { return (c.card.oked || []).filter(o => o.code).map(o => `${okedFmt(okedDigits(o.code))} ${o.name || ""}`.trim()).join("; "); }
+function okedListText(c) { return (c.card.oked || []).filter(o => o.code).map(o => `${okedFmt(okedDigits(o.code))} ${okedNameL(o.code, o.name) || ""}`.trim()).join("; "); }
 
 /* ---------------------------------------------------------------- единицы без вопросов: всё приводится к тыс. тг */
 function autoUnits(k, pid, mx) {

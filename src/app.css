@@ -404,3 +404,9 @@ table.data.trust td.cell input { min-width: 260px; }
 .binrow{display:flex;gap:6px;align-items:center}
 .binrow .inp{min-width:130px}
 .binrow .btn{white-space:nowrap;padding:6px 10px}
+.lang{display:inline-flex;gap:0;border:1px solid currentColor;border-radius:999px;overflow:hidden;vertical-align:middle;margin-left:8px;flex:none}
+.lang button{border:0;background:transparent;color:inherit;font:inherit;font-size:12px;font-weight:600;letter-spacing:.04em;padding:4px 10px;cursor:pointer;opacity:.7}
+.lang button.on{background:currentColor;opacity:1}
+.lang button.on{color:#fff;background:#023DFF}
+.brand .lang{display:flex;width:max-content;margin:8px 0 0;color:#fff;border-color:rgba(255,255,255,.7)}
+.brand .lang button.on{background:#fff;color:#023DFF}

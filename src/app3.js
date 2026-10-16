@@ -5,7 +5,7 @@ let PAGE = "card", COMP_TAB = 1, AN_TAB = "rat", FC_TAB = 0;
 const SEV = { crit: "Критично", risk: "Риск", chk: "Проверить", nd: "Нет данных" };
 function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.add("on"); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("on"), 2600); }
 function paintSaved() { const el = $("#saved"); if (el && lastSaved) el.textContent = "Сохранено в этом браузере, " + lastSaved.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }); }
-const opts = (list, cur) => list.map(x => `<option${String(x) === String(cur) ? " selected" : ""}>${esc(x)}</option>`).join("");
+const opts = (list, cur) => list.map(x => `<option value="${esc(x)}"${String(x) === String(cur) ? " selected" : ""}>${esc(x)}</option>`).join("");
 const stChip = (s, txt) => `<span class="st ${s}">${esc(txt ?? ST[s] ?? "")}</span>`;
 const CHK_TXT = { ok: ["ok", "ОК"], bad: ["crit", "Расхождение"], nd: ["nd", "нет данных"], na: ["nd", "—"] };
 
@@ -18,7 +18,7 @@ function render() {
   document.body.innerHTML = `
   <div class="app">
     <nav class="rail" aria-label="Разделы">
-      <div class="brand">Финансовый анализ<small>компании и группы РК · локально</small></div>
+      <div class="brand">Финансовый анализ<small>компании и группы РК · локально</small>${langSwitch()}</div>
       <button class="back" data-act="clients">← К списку клиентов</button>
       <div class="client"><b>${esc(C.card.name)}</b><span class="small">${nComp()} комп. · ${C.periods.length} пер.</span></div>
       <ol class="steps">${steps.map(([id, t]) => `<li class="num"><button data-page="${id}" ${PAGE === id ? 'aria-current="page"' : ""}>${t}<span class="pdot" data-pdot="${id}"></span></button></li>`).join("")}</ol>
@@ -67,7 +67,7 @@ const DIALOG = `<dialog id="dlg"><div class="dh"><h2 id="dlgT"></h2></div><div c
 function renderClients() {
   const list = CLIENTS.slice().sort((a, b) => b.updated - a.updated);
   const last = list[0];
-  const okedOf = c => (c.card.oked && c.card.oked[0] && c.card.oked[0].code ? "ОКЭД " + c.card.oked[0].code + (c.card.oked[0].name ? " · " + c.card.oked[0].name : "") : (c.card.activity || ""));
+  const okedOf = c => (c.card.oked && c.card.oked[0] && c.card.oked[0].code ? "ОКЭД " + c.card.oked[0].code + (c.card.oked[0].name ? " · " + okedNameL(c.card.oked[0].code, c.card.oked[0].name) : "") : (c.card.activity || ""));
   const stOf = c => { const s = c.concl?.status || "Черновик"; return s === "Утверждено" ? ["ok", s] : s === "На проверке" ? ["chk", s] : ["nd", s]; };
   const done = list.filter(c => c.concl?.status === "Утверждено").length;
   const when = d => new Date(d).toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
@@ -78,7 +78,7 @@ function renderClients() {
       <div class="cact"><button class="btn primary" data-open="${c.id}">Открыть</button><button class="btn ghost" data-exp="${c.id}" title="Сохранить файл клиента">Файл</button><button class="btn ghost danger" data-del="${c.id}">Удалить</button></div></li>`).join("");
   document.body.innerHTML = `<div class="home">
     <header class="hbar"><div class="mark" aria-hidden="true"><span></span></div><b>Финансовый анализ</b><span class="hnote">работает без интернета · данные остаются на этом компьютере${LOCK.on ? " · защищено ПИН-кодом" : ""}</span>
-      <span class="hsec">${cryptoOk() ? (LOCK.on ? `<button class="btn ghost" data-act="lock">Заблокировать</button><button class="btn ghost" data-act="pinset">Сменить ПИН</button><button class="btn ghost" data-act="pinoff">Снять ПИН</button>` : `<button class="btn ghost" data-act="pinset">Защитить ПИН-кодом</button>`) : ""}</span></header>
+      <span class="hsec">${langSwitch()}${cryptoOk() ? (LOCK.on ? `<button class="btn ghost" data-act="lock">Заблокировать</button><button class="btn ghost" data-act="pinset">Сменить ПИН</button><button class="btn ghost" data-act="pinoff">Снять ПИН</button>` : `<button class="btn ghost" data-act="pinset">Защитить ПИН-кодом</button>`) : ""}</span></header>
     ${(() => { const n = list.filter(c => !c.demo && (!c.saved || c.saved < c.updated)).length; return n ? `<div class="hwarn"><b>${n === 1 ? "1 клиент изменён" : n + " клиентов изменены"} после последнего сохранения в файл.</b> Данные хранятся только в этом браузере — если очистить его, они пропадут. <button class="btn primary" data-act="backup">Сохранить всех клиентов в файл</button></div>` : ""; })()}
     <section class="hero">
       <div class="hblue">
@@ -109,7 +109,7 @@ function pageCard() {
   const f = (key, lab, type = "text") => `<label class="f"><span>${lab}</span><input class="inp" data-card="${key}" type="${type}" value="${esc(c[key] ?? "")}"></label>`;
   const sel = (key, lab, list) => `<label class="f"><span>${lab}</span><select class="inp" data-card="${key}">${opts(list, c[key])}</select></label>`;
   const comps = C.companies.map((x, i) => `<tr><td class="lab">К${i + 1}</td>
-      <td><input class="inp" data-comp="${i}" data-f="name" value="${esc(x.name)}" placeholder="Название"></td>
+      <td><input class="inp" data-comp="${i}" data-f="${LANG === "kz" ? "nameKz" : "name"}" value="${esc(LANG === "kz" ? (x.nameKz || x.name) : x.name)}" placeholder="Название"></td>
       <td><div class="binrow"><input class="inp" data-comp="${i}" data-f="bin" value="${esc(x.bin)}" placeholder="12 цифр" inputmode="numeric"><button class="btn ghost" data-binlookup="${i}" title="Загрузить данные компании с ba.prg.kz: регистрация, ОКЭД, руководитель, НДС, проверки благонадёжности (отправляется только БИН)">По БИН</button></div></td>
       <td><div class="roles">${S.lists.role.map(r => `<label><input type="checkbox" data-role="${i}" value="${esc(r)}" ${compRoles(x).includes(r) ? "checked" : ""}>${esc(r)}</label>`).join("")}</div></td>
       <td><select class="inp" data-comp="${i}" data-f="form">${opts(S.lists.form, x.form)}</select></td>
@@ -152,7 +152,7 @@ function okedPanel() {
   if (!C.card.oked || !C.card.oked.length) C.card.oked = [{ code: "", name: "" }];
   const n = Object.keys(OKED).length;
   const rows = C.card.oked.map((o, i) => {
-    const lk = okedLookup(o.code)?.name, nm = o.manual ? o.name : (lk && !(KZ_LET.test(lk) && o.name && !KZ_LET.test(o.name)) ? lk : o.name || lk || "");
+    const lk = okedLookup(o.code)?.name, nm0 = o.manual ? o.name : (lk && !(KZ_LET.test(lk) && o.name && !KZ_LET.test(o.name)) ? lk : o.name || lk || ""), nm = o.manual ? nm0 : okedNameL(o.code, nm0);
     return `<tr><td class="lab">${i === 0 ? "Основной" : "Доп. " + i}</td>
       <td><input class="inp" data-oked="${i}" data-f="code" value="${esc(o.code)}" placeholder="например, 46.90.0" inputmode="numeric" style="max-width:150px"></td>
       <td><input class="inp" data-oked="${i}" data-f="name" value="${esc(nm)}" placeholder="наименование подставится по коду"><span class="small muted" data-okedhint="${i}">${esc(okedHint(o.code))}</span></td>
