@@ -23,13 +23,23 @@ function perMonths(p) {
   return out;
 }
 const dmyToYm = s => (s && /^\d{2}\.\d{2}\.\d{4}$/.test(s) ? `${s.slice(6)}-${s.slice(3, 5)}` : null);
+// вид декларации: очередная/первоначальная — основная; дополнительная — суммы в ней это разница к ранее поданной (ст. НК РК), поэтому прибавляется
+const DECL_VID = { main: "Очередная / первоначальная", add: "Дополнительная", addn: "Дополнительная по уведомлению" };
+const isAddDecl = d => d.vid === "add" || d.vid === "addn";
 function declVal(k, p, key) {
   const win = new Set(perMonths(p)), cov = new Set(), docs = []; let sum = 0;
-  const list = C.decl.filter(d => d.k === k && d.vals && isNum(d.vals[key]) && d.year).sort((a, b) => ((a.part === "Y" ? 0 : 1) - (b.part === "Y" ? 0 : 1)) || (N(b.t) - N(a.t)));  // годовые раньше, из повторных — последняя загруженная
+  const all = C.decl.filter(d => d.k === k && d.vals && isNum(d.vals[key]) && d.year);
+  const list = all.filter(d => !isAddDecl(d)).sort((a, b) => ((a.part === "Y" ? 0 : 1) - (b.part === "Y" ? 0 : 1)) || (N(b.t) - N(a.t)));  // годовые раньше, из повторных основных — последняя загруженная
+  const used = [];
   for (const d of list) {
     const ms = partMonths(d.part).map(m => `${d.year}-${pad2(m)}`);
     if (!ms.every(x => win.has(x)) || ms.some(x => cov.has(x))) continue;
-    ms.forEach(x => cov.add(x)); sum += d.vals[key]; docs.push(d);
+    ms.forEach(x => cov.add(x)); sum += d.vals[key]; docs.push(d); used.push(d);
+  }
+  // дополнительные к уже учтённым основным (та же форма, год и налоговый период) — прибавляем разницу
+  for (const d of all.filter(isAddDecl)) {
+    if (!used.some(b => b.year === d.year && b.part === d.part && b.form === d.form)) continue;
+    sum += d.vals[key]; docs.push(d);
   }
   return docs.length ? { v: sum / 1000, cov: cov.size, need: win.size, docs } : null;
 }
@@ -263,7 +273,7 @@ function pageTax() {
   const ks = Object.keys(DocParse.KEYS).filter(key => decl.some(d => d.vals && isNum(d.vals[key])));
   const sorted = decl.slice().sort((a, b) => (a.year - b.year) || String(a.part).localeCompare(String(b.part)) || String(a.form).localeCompare(String(b.form)));
   h += `<section class="panel"><h2>Декларации (${decl.length})</h2><p class="hint">Тыс. тг — суммы из деклараций переведены из тенге автоматически.</p><div class="tablewrap" style="max-height:none"><table class="data"><thead><tr><th class="lab">Форма</th><th>Период</th>${ks.map(key => `<th>${esc(DocParse.KEYS[key].t)}</th>`).join("")}<th></th></tr></thead><tbody>
-    ${sorted.map(d => `<tr><td class="lab">${esc(d.formName || d.form)}<span class="formula">${esc(d.file || "введена вручную")}</span></td><td>${esc((d.year || "год?") + ", " + (PARTS[d.part] || d.part))}</td>${ks.map(key => `<td>${d.vals && isNum(d.vals[key]) ? fmt(d.vals[key] / 1000) : ""}</td>`).join("")}
+    ${sorted.map(d => `<tr><td class="lab">${esc(d.formName || d.form)}${isAddDecl(d) ? ' <span class="tag">дополнительная</span>' : ""}<span class="formula">${esc(d.file || "введена вручную")}</span></td><td>${esc((d.year || "год?") + ", " + (PARTS[d.part] || d.part))}</td>${ks.map(key => `<td>${d.vals && isNum(d.vals[key]) ? fmt(d.vals[key] / 1000) : ""}</td>`).join("")}
       <td style="white-space:nowrap"><button class="btn ghost" data-decledit="${d.id}">Открыть</button><button class="btn ghost danger" data-decldel="${d.id}" title="Удалить" aria-label="Удалить">×</button></td></tr>`).join("")}
     </tbody></table></div></section>`;
   return h;
@@ -378,7 +388,7 @@ async function importDocs(files, kDef, mode) {
     if (kind === "decl") {
       const d = r.decl, keys = DocParse.pickKeys(d, DMAP), vals = {};
       for (const [key, code] of Object.entries(keys)) { const l = d.lines.find(x => x.code === code); if (l && l.vals.length) vals[key] = l.vals[0]; }
-      const doc = { id: uid(), k: compByBin(d.bin) || kDef, file: file.name, form: d.form, formName: d.formName, year: d.year, part: d.part, bin: d.bin, lines: d.lines, vals, src: keys, t: Date.now() };
+      const doc = { id: uid(), k: compByBin(d.bin) || kDef, file: file.name, form: d.form, formName: d.formName, year: d.year, part: d.part, vid: d.vid || (/(^|[^а-яa-z])доп/i.test(file.name) ? "add" : "main"), bin: d.bin, lines: d.lines, vals, src: keys, t: Date.now() };
       const saved = await declEditor(doc, true, d.bin && compByBin(d.bin) ? "Компания определена по БИН " + d.bin : "");
       rep.push(saved ? { file: file.name, page: "tax", ok: `${saved.formName}, ${saved.year}, ${PARTS[saved.part]}: строк ${d.lines.length}` } : { file: file.name, err: "не сохранено" });
     } else if (kind === "stmt") {
@@ -533,7 +543,9 @@ async function declEditor(doc, isNew, note) {
     <div class="grid2" style="margin:8px 0 12px"><label class="f"><span>Компания</span><select class="inp" id="dComp">${compsOpts}</select></label>
       <label class="f"><span>Форма</span><select class="inp" id="dForm">${formOpts}</select></label>
       <label class="f"><span>Год</span><input class="inp" id="dYear" inputmode="numeric" value="${esc(doc.year || "")}"></label>
-      <label class="f"><span>Налоговый период</span><select class="inp" id="dPart">${Object.entries(PARTS).map(([v, t]) => `<option value="${v}"${doc.part === v ? " selected" : ""}>${t}</option>`).join("")}</select></label></div>
+      <label class="f"><span>Налоговый период</span><select class="inp" id="dPart">${Object.entries(PARTS).map(([v, t]) => `<option value="${v}"${doc.part === v ? " selected" : ""}>${t}</option>`).join("")}</select></label>
+      <label class="f"><span>Вид декларации</span><select class="inp" id="dVid">${Object.entries(DECL_VID).map(([v, t]) => `<option value="${v}"${(doc.vid || "main") === v ? " selected" : ""}>${t}</option>`).join("")}</select></label></div>
+    <p class="hint">Дополнительная декларация содержит разницу к ранее поданной — её суммы прибавляются к очередной за тот же период. Суммы вводите так, как они указаны в дополнительной (со знаком «−», если уменьшение).</p>
     <p class="hint">Проверьте, что сумма взята из нужной строки. Выбор строки запоминается для этой формы и подставится в следующий раз.</p>
     <div id="dKeys">${declKeysHTML(doc)}</div>
     ${doc.lines?.length ? `<details style="margin-top:12px"><summary>Все распознанные строки (${doc.lines.length})</summary><div class="tablewrap" style="max-height:300px"><table class="data"><thead><tr><th class="lab">Код</th><th style="text-align:left">Наименование</th><th>Сумма, тыс. тг</th></tr></thead><tbody>${doc.lines.map(l => `<tr><td class="lab">${esc(l.code)}</td><td style="text-align:left;white-space:normal">${esc(l.label)}</td><td>${l.vals.map(v => K1(v)).join("; ")}</td></tr>`).join("")}</tbody></table></div></details>` : ""}`;
@@ -546,7 +558,7 @@ async function declEditor(doc, isNew, note) {
     };
   });
   const res = await dialog(isNew ? "Декларация: проверьте и сохраните" : "Декларация", body, [{ t: "Отменить", v: null }, { t: "Сохранить", primary: true, v: d => {
-    const o = { k: +d.querySelector("#dComp").value, form: d.querySelector("#dForm").value, year: parseInt(d.querySelector("#dYear").value, 10) || null, part: d.querySelector("#dPart").value, vals: {}, src: {} };
+    const o = { k: +d.querySelector("#dComp").value, form: d.querySelector("#dForm").value, year: parseInt(d.querySelector("#dYear").value, 10) || null, part: d.querySelector("#dPart").value, vid: d.querySelector("#dVid").value, vals: {}, src: {} };
     d.querySelectorAll("[data-dkval]").forEach(inp => { const key = inp.dataset.dkval, l = doc.lines?.find(x => x.code === d.querySelector(`[data-dkcode="${key}"]`)?.value), exact = [doc.vals?.[key], l?.vals?.[0]].find(x => isNum(x) && K1(x) === inp.value);
       const v = exact !== undefined ? exact : fromK(inp.value); if (v !== null) o.vals[key] = v; });
     d.querySelectorAll("[data-dkcode]").forEach(s => { o.src[s.dataset.dkcode] = s.value; });

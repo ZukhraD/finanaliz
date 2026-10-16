@@ -134,7 +134,10 @@ const DocParse = (() => {
     if (m && FORMS[form]?.part === "H") part = "H" + m[1];
     if (!part) part = FORMS[form]?.part === "H" ? "H1" : FORMS[form]?.part === "Q" ? "Q1" : "Y";
     const binM = /(?:бин|иин)[^\d]{0,30}(\d{12})/i.exec(squeeze(L.slice(0, 40).map(l => l.text).join(" ")));
-    return { form, formName: FORMS[form]?.name || (form ? `Форма ${form}.00` : "Форма не определена"), year, part, bin: binM ? binM[1] : "", lines, partGuessed: !m };
+    // вид декларации: отметка (X, V, ✓) перед «дополнительная» / «дополнительная по уведомлению»
+    const vm = /(?:^|\s)[xхv✓✔☒■]\s*(?:[a-zа-я]?\s*)?дополнительн\S*(\s+по\s+уведомлени)?/i.exec(lw);
+    const vid = vm ? (vm[1] ? "addn" : "add") : "";
+    return { form, formName: FORMS[form]?.name || (form ? `Форма ${form}.00` : "Форма не определена"), year, part, vid, bin: binM ? binM[1] : "", lines, partGuessed: !m };
   }
   // какие строки декларации идут в показатели сверки: сначала выбор пользователя (по коду), потом правила
   function pickKeys(d, userMap) {
