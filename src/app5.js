@@ -103,7 +103,7 @@ async function loadOkedFile(file) {
 function okedListText(c) { return (c.card.oked || []).filter(o => o.code).map(o => `${okedFmt(okedDigits(o.code))} ${okedNameL(o.code, o.name) || ""}`.trim()).join("; "); }
 
 /* ---------------------------------------------------------------- единицы без вопросов: всё приводится к тыс. тг */
-function autoUnits(k, pid, mx) {
+function autoUnits(k, pid, mx, h = {}) {
   // 1) по уже введённым периодам той же компании: выбираем множитель, при котором масштаб совпадает
   const ref = [];
   for (const p of C.periods) if (p.id !== pid) for (const key of ["ta", "rev"]) { const v = val(k, key, p.id); if (isNum(v) && v > 0) ref.push(v); }
@@ -112,6 +112,24 @@ function autoUnits(k, pid, mx) {
     const best = [0.001, 1, 1000].map(f => [f, Math.abs(Math.log10(mx * f / r))]).sort((a, b) => a[1] - b[1])[0];
     if (best[1] < 1.5) return { f: best[0], why: "по масштабу других периодов компании" };
   }
-  // 2) по величине: от 10 млн и выше в тысячах встречается редко — значит, тенге
-  return mx >= 1e7 ? { f: 0.001, why: "по величине чисел" } : { f: 1, why: "по величине чисел" };
+  // 2) копейки: суммы с дробной частью бывают только в тенге
+  if (h.frac >= 0.3) return { f: 0.001, why: "в файле суммы с тиынами — значит, тенге" };
+  // 3) шапка формы: «в тысячах тенге» / «млн тенге» / «в тенге»
+  if (h.head === "m") return { f: 1000, why: "в шапке формы указано «млн тенге»" };
+  if (h.head === "k") return mx >= 1e9 ? { f: 0.001, why: "в шапке «тыс. тенге», но числа слишком большие для тысяч — тенге" } : { f: 1, why: "в шапке формы указано «тыс. тенге»" };
+  if (h.head === "t") return { f: 0.001, why: "в шапке формы указано «тенге»" };
+  // 4) по величине: однозначные случаи; между 10 и 100 млн — спросить
+  if (mx >= 1e8) return { f: 0.001, why: "по величине чисел" };
+  if (mx < 1e7) return { f: 1, why: "по величине чисел" };
+  return { ask: true, f: 0.001, why: "по величине чисел" };
+}
+// подсказки для единиц: текст шапки и доля сумм с дробной частью
+function unitHints(sheets) {
+  let head = "", n = 0, fr = 0;
+  for (const sh of sheets) {
+    for (const row of sh.rows.slice(0, 25)) if (row) for (const v of row) if (typeof v === "string") head += " " + v.toLowerCase();
+    for (const row of sh.rows) if (row) for (const v of row) if (typeof v === "number" && Math.abs(v) >= 1000) { n++; if (Math.abs(v - Math.round(v)) > 0.004) fr++; }
+  }
+  const u = /млн\.?\s*(тенге|тг)|миллион\S*\s+тенге/.test(head) ? "m" : /(тыс\S*|тысяч\S*)\s*(\.\s*)?(казахстанских\s+)?(тенге|тг)|в\s+тысячах/.test(head) ? "k" : /(в|единица\s+измерения:?)\s+тенге|,\s*тенге|\(тенге\)/.test(head) ? "t" : "";
+  return { head: u, frac: n ? fr / n : 0 };
 }

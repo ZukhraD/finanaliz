@@ -302,7 +302,7 @@ async function importFiles(files, k, pid, askUnits) {
     if (!/\.(xlsx|xlsm|xls)$/i.test(file.name)) { report.push({ file: file.name, err: "формат не поддерживается — нужен Excel (.xlsx, .xlsm, .xls)" }); continue; }
     let sheets;
     try { sheets = await readWorkbook(await file.arrayBuffer()); } catch (e) { report.push({ file: file.name, err: "не удалось прочитать: " + e.message }); continue; }
-    const parsed = [];
+    const parsed = [], used = [];
     let lastKind = null;
     for (const sh of sheets) {
       if (sh.hidden && sheets.length > 1) continue;
@@ -311,7 +311,7 @@ async function importFiles(files, k, pid, askUnits) {
       // лист без заголовка сразу после формы — её продолжение (вторая страница)
       if (!kind && lastKind) { const mc = mapCodes(lastKind); let n = 0; for (const row of sh.rows) if (row) for (const v of row) if (mc.has(normCode(v))) n++; if (n >= 3) kind = lastKind; }
       if (!kind) continue;
-      lastKind = kind;
+      lastKind = kind; used.push(sh);
       const f = parseForm(sh, kind);
       const same = parsed.find(p => p.kind === kind);
       if (same) { if (!f.err) { mergeForms(same.f, f); same.sheet += ", " + sh.name; } continue; }
@@ -323,8 +323,9 @@ async function importFiles(files, k, pid, askUnits) {
     const units = C.settings.units || "auto";
     let factor = { t: 0.001, k: 1, m: 1000 }[units] || 0, why = "по настройке";
     const mx = Math.max(...parsed.map(p => p.f.max));
-    if (units === "ask") { factor = await askUnits(file.name, mx, autoUnits(k, pid, mx).f === 0.001 ? "t" : "k"); why = "указано вручную"; if (!factor) { report.push({ file: file.name, err: "загрузка отменена" }); continue; } }
-    if (!factor) { const a = autoUnits(k, pid, mx); factor = a.f; why = "определено автоматически " + a.why; }
+    const hints = unitHints(used), au = autoUnits(k, pid, mx, hints);
+    if (units === "ask" || (!factor && au.ask)) { factor = await askUnits(file.name, mx, au.f === 0.001 ? "t" : au.f === 1000 ? "m" : "k"); why = "указано вручную"; if (!factor) { report.push({ file: file.name, err: "загрузка отменена" }); continue; } }
+    if (!factor) { factor = au.f; why = "определено автоматически " + au.why; }
     for (const { kind, f, sheet } of parsed) {
       const prof = chooseProfile(f, kind);
       let n = 0, over = 0; const miss = new Set();
