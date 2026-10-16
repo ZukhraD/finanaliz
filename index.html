@@ -1460,12 +1460,22 @@ function okedNameL(code, ruName) {
   if (LANG !== "kz") return ruName;
   const d = okedDigits(code);
   for (let n = d.length; n >= 2; n--) if (OKED_KZ[d.slice(0, n)]) return OKED_KZ[d.slice(0, n)];
-  return ruName;
+  // казахского справочника нет — название раздела (2 знака) на казахском
+  const div = OKED_DIV[d.slice(0, 2)];
+  return div ? tr(div) : ruName;
 }
-const okedKz = () => { const v = Object.values(OKED); return v.length > 20 && v.filter(x => KZ_LET.test(x)).length > v.length * 0.3; };
+const okedKz = () => { const v = Object.values(OKED); return (v.length > 20 && v.filter(x => KZ_LET.test(x)).length > v.length * 0.3) || (Object.keys(OKED_KZ).length > 20 && v.length < 20); };
 let OKED = (() => { try { return JSON.parse(localStorage.getItem(OKED_KEY) || "{}"); } catch (e) { return {}; } })();
 const okedDigits = s => String(s ?? "").replace(/\D/g, "").slice(0, 5);
 const okedFmt = d => (d.length <= 2 ? d : d.length <= 4 ? d.slice(0, 2) + "." + d.slice(2) : d.slice(0, 2) + "." + d.slice(2, 4) + "." + d.slice(4));
+// справочник, загруженный раньше «казахской колонкой», переносим в казахский; русские названия вернутся после повторной загрузки
+(() => {
+  const ks = Object.keys(OKED), kz = ks.filter(k => KZ_LET.test(OKED[k]));
+  if (ks.length > 20 && kz.length > ks.length * 0.3) {
+    for (const k of kz) { if (!OKED_KZ[k]) OKED_KZ[k] = OKED[k]; delete OKED[k]; }
+    try { localStorage.setItem(OKED_KZ_KEY, JSON.stringify(OKED_KZ)); localStorage.setItem(OKED_KEY, JSON.stringify(OKED)); } catch (e) { /* до перезагрузки */ }
+  }
+})();
 function okedLookup(code) {
   const d = okedDigits(code);
   if (d.length < 2) return null;
