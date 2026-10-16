@@ -402,10 +402,10 @@ function pageMap() {
     <td class="cell opt"><input data-custom="${m[1]}" value="${esc(C.custom?.[m[1]] || "")}" style="text-align:left" placeholder="коды через запятую"></td></tr>`).join("");
   return `<div class="pagehead"><div class="lead"><h1>Настройка загрузки форм</h1><p>Какая строка формы попадает в какую строку анализатора. Полная форма, форма МСБ и форма НСФО (малый бизнес) распознаются автоматически. Для нестандартной формы заполните колонку «Свой вариант» и выберите её ниже.</p></div></div>
   <section class="panel"><div class="grid2">
-    <label class="f"><span>Единицы в файлах форм</span><select class="inp" data-set="units">${[["auto", "Определять автоматически и переводить в тыс. тг"], ["ask", "Спрашивать при каждой загрузке"], ["t", "Всегда тенге"], ["k", "Всегда тыс. тенге"], ["m", "Всегда млн тенге"]].map(([v, t]) => `<option value="${v}"${st.units === v ? " selected" : ""}>${t}</option>`).join("")}</select></label>
+    <label class="f"><span>Единицы в файлах форм</span><span class="small muted" style="font-weight:400">выбираются в окне загрузки: «тыс. тг» или «тг»</span></label>
     <label class="f"><span>Вариант формы</span><select class="inp" data-set="variant">${[[0, "Определять автоматически"], [1, "Полная форма (приказ №404)"], [2, "Форма МСБ"], [4, "Форма НСФО (малый бизнес)"], [3, "Свой вариант"]].map(([v, t]) => `<option value="${v}"${(st.variant || 0) == v ? " selected" : ""}>${t}</option>`).join("")}</select></label>
     <label class="f"><span>Предыдущий период из второй колонки формы</span><select class="inp" data-set="prev"><option value="0"${!st.prev ? " selected" : ""}>Не загружать</option><option value="1"${st.prev ? " selected" : ""}>Загружать, если ячейки пусты</option></select></label></div>
-    <p class="hint" style="margin-top:12px">Анализатор считает в тыс. тг. При автоматическом режиме единицы файла определяются по масштабу других периодов компании, по сумме с тиынами (значит, тенге), по шапке формы («тыс. тенге», «тенге», «млн тенге») и по величине чисел; если однозначно определить нельзя — сайт спросит. Значения сразу приводятся к тыс. тг; в журнале видно, что было сделано.</p>
+    <p class="hint" style="margin-top:12px">Анализатор считает в тыс. тг. Единицы файлов отчётности вы указываете в окне загрузки: «тыс. тг» — суммы сохраняются как есть, «тг» — делятся на 1000. Декларации, выписки и справки банков всегда в тенге и переводятся в тыс. тг автоматически. Если выбор не похож на цифры в файле (тиыны при «тыс. тг», слишком маленькие суммы при «тг»), в результате загрузки будет предупреждение.</p>
     <p class="hint">Синтаксис кодов: 010 — как в форме; *011 — по модулю; -025 — вычесть по модулю; !200 — вычесть со знаком; #текст — строка «в том числе» без кода, название которой содержит текст. Коды 010 и 10 — одно и то же.</p></section>
   <section class="panel"><h2>Справочник ОКЭД</h2><p class="hint">${Object.keys(OKED).length ? `Загружен: ${nf0.format(Object.keys(OKED).length)} кодов. Хранится в этом браузере и действует для всех клиентов.${okedKz() ? " <b>Сейчас наименования на казахском — загрузите файл заново: сайт возьмёт колонку на русском.</b>" : ""}` : "Не загружен — по коду подставляется только название раздела (2 знака)."} Загрузите классификатор ОКЭД в Excel (.xlsx или .xls), например с сайта Бюро национальной статистики: колонки кода и наименования найдутся сами.</p>
     <button class="btn" data-act="okedfile">${Object.keys(OKED).length ? "Обновить справочник ОКЭД" : "Загрузить справочник ОКЭД"}</button></section>
@@ -446,17 +446,20 @@ function dialog(title, body, buttons) {
 }
 async function askUnits(fname, mx, guess) {
   const body = `<p>Анализатор считает в тыс. тенге. В шапке форм часто написано «тысяч тенге», а цифры на самом деле в тенге.</p>
-    <p>Наибольшее число в файле <b>${esc(fname)}</b>: <b>${fmt(mx)}</b>.</p>
+    ${mx ? `<p>Наибольшее число в файле <b>${esc(fname)}</b>: <b>${fmt(mx)}</b>.</p>` : `<p>Файлы: <b>${esc(fname)}</b>.</p>`}
     <div class="chips" role="radiogroup">${[["t", "тенге — разделить на 1000"], ["k", "тыс. тенге — как есть"], ["m", "млн тенге — умножить на 1000"]].map(([v, t]) => `<label class="btn"><input type="radio" name="u" value="${v}" ${v === guess ? "checked" : ""}> ${t}</label>`).join("")}</div>`;
   const v = await dialog("В каких единицах цифры?", body, [{ t: "Отменить", v: null }, { t: "Загрузить", primary: true, v: d => d.querySelector("input[name=u]:checked")?.value }]);
   return v ? { t: 0.001, k: 1, m: 1000 }[v] : 0;
 }
+const UNITS_LAST = () => { try { return localStorage.getItem("finkz.units.last") || ""; } catch (e) { return ""; } };
 async function importDialog() {
   const persOpts = C.periods.map((p, i) => `<option value="${p.id}"${i === C.periods.length - 1 ? " selected" : ""}>${esc(p.label)}</option>`).join("");
   const compsOpts = C.companies.map((x, i) => `<option value="${i + 1}"${COMP_TAB === i + 1 ? " selected" : ""}>К${i + 1} · ${esc(x.name || "без названия")}</option>`).join("");
   const body = `<p class="muted">Баланс, ОПиУ и ОДДС в Excel (.xlsx, .xlsm, .xls) — можно сразу несколько файлов одной компании за один период. Файлы читаются здесь же, в браузере, и никуда не отправляются.</p>
     <div class="grid2" style="margin:12px 0"><label class="f"><span>Компания</span><select class="inp" id="iComp">${compsOpts}</select></label><label class="f"><span>Период</span><select class="inp" id="iPer">${persOpts}</select></label></div>
-    <p class="small muted" style="margin-top:6px">PDF деклараций, выписок и справок банков тоже можно перетащить сюда — они попадут на страницы «Налоги» и «Банк».</p>
+    <div class="f" style="margin:4px 0 12px"><span>В каких единицах суммы в файлах отчётности?</span>
+      <div class="chips" role="radiogroup" id="iUnits">${[["k", "тыс. тг — сохранить как есть"], ["t", "тг — перевести в тыс. тг"]].map(([v, t]) => `<label class="btn"><input type="radio" name="iu" value="${v}" ${UNITS_LAST() === v ? "checked" : ""}> ${t}</label>`).join("")}</div></div>
+    <p class="small muted" style="margin-top:6px">PDF деклараций, выписок и справок банков тоже можно перетащить сюда — они попадут на страницы «Налоги» и «Банк»; их суммы в тенге и переводятся в тыс. тг автоматически.</p>
     <label class="drop" id="iDrop"><input type="file" id="iFiles" multiple accept=".xlsx,.xlsm,.xls,.pdf" style="display:none"><span id="iTxt">Перетащите файлы сюда или нажмите, чтобы выбрать</span></label>`;
   let files = [];
   setTimeout(() => {
@@ -466,11 +469,13 @@ async function importDialog() {
     drop.ondragleave = () => drop.classList.remove("over");
     drop.ondrop = e => { e.preventDefault(); drop.classList.remove("over"); set(e.dataTransfer.files); };
   });
-  const sel = await dialog("Загрузить формы отчётности", body, [{ t: "Отменить", v: null }, { t: "Загрузить", primary: true, v: () => ({ k: +$("#iComp").value, pid: $("#iPer").value }) }]);
+  const sel = await dialog("Загрузить формы отчётности", body, [{ t: "Отменить", v: null }, { t: "Загрузить", primary: true, v: () => ({ k: +$("#iComp").value, pid: $("#iPer").value, u: document.querySelector("input[name=iu]:checked")?.value || "" }) }]);
   if (!sel || !files.length) { if (sel) toast("Файлы не выбраны"); return; }
   const pdfs = files.filter(f => /\.pdf$/i.test(f.name)); files = files.filter(f => !/\.pdf$/i.test(f.name));
   if (pdfs.length && !files.length) return runDocImport(pdfs, sel.k);
-  const rep = await importFiles(files, sel.k, sel.pid, askUnits);
+  if (!sel.u) { const f = await askUnits(files.map(f => f.name).join(", "), 0, ""); if (!f) return; sel.u = f === 0.001 ? "t" : f === 1000 ? "m" : "k"; }
+  try { localStorage.setItem("finkz.units.last", sel.u); } catch (e) { /* не важно */ }
+  const rep = await importFiles(files, sel.k, sel.pid, askUnits, sel.u);
   if (pdfs.length) { await importDocs(pdfs, sel.k); toast("PDF загружены — см. страницы «Налоги» и «Банк»"); }
   COMP_TAB = sel.k; if (!["bal", "odr", "cf"].includes(PAGE)) PAGE = "bal"; render();
   const lines = rep.map(r => `<div class="logline"><b>${esc(r.file)}</b>${r.sheet ? " / " + esc(r.sheet) : ""}: ${r.err ? stChip("crit", "не загружено") + " " + esc(r.err) : `${stChip("ok", SRC_TXT[r.kind])} ${r.n} строк, ${esc(r.prof)}, ${esc(r.units)}${r.over ? `, перезаписано ${r.over}` : ""}${r.miss.length ? `<details class="small muted" style="margin-top:4px"><summary>Строк из шаблона нет в файле: ${r.miss.length} — это нормально, если таких строк в форме нет</summary>Коды: ${esc(r.miss.join(", "))}. Если строка в форме есть, но не загрузилась — проверьте «Настройку загрузки».</details>` : ""}`}</div>`).join("");

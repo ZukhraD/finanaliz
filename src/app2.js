@@ -295,7 +295,7 @@ function evalSpec(spec, f, w) {
 }
 const SRC_TXT = { B: "Баланс (ф.1)", P: "ОПиУ (ф.2)", C: "ОДДС (ф.3)" };
 const PROF_TXT = { 1: "полная форма (приказ №404)", 2: "форма МСБ", 3: "свой вариант", 4: "форма НСФО (малый бизнес)" };
-async function importFiles(files, k, pid, askUnits) {
+async function importFiles(files, k, pid, askUnits, forced) {
   const report = [];
   const pp = prevPid(pid);
   for (const file of files) {
@@ -320,11 +320,13 @@ async function importFiles(files, k, pid, askUnits) {
     }
     if (!parsed.length) { if (!report.some(r => r.file === file.name)) report.push({ file: file.name, err: "не найдено ни баланса, ни ОПиУ, ни ОДДС (нужен заголовок формы или колонка кодов строк)" }); continue; }
     // единицы — один ответ на файл
-    const units = C.settings.units || "auto";
-    let factor = { t: 0.001, k: 1, m: 1000 }[units] || 0, why = "по настройке";
+    const units = forced || C.settings.units || "auto";
+    let factor = { t: 0.001, k: 1, m: 1000 }[units] || 0, why = forced ? "указано при загрузке" : "по настройке";
     const mx = Math.max(...parsed.map(p => p.f.max));
     const hints = unitHints(used), au = autoUnits(k, pid, mx, hints);
-    if (units === "ask" || (!factor && au.ask)) { factor = await askUnits(file.name, mx, au.f === 0.001 ? "t" : au.f === 1000 ? "m" : "k"); why = "указано вручную"; if (!factor) { report.push({ file: file.name, err: "загрузка отменена" }); continue; } }
+    if (forced === "k" && (hints.frac >= 0.3 || mx >= 1e9)) why += " — внимание: " + (hints.frac >= 0.3 ? "в файле суммы с тиынами, так бывает в тенге" : "числа очень большие для тысяч") + ", проверьте";
+    if (forced === "t" && mx > 0 && mx < 1e5) why += " — внимание: числа маленькие для тенге, проверьте";
+    if (!forced && (units === "ask" || (!factor && au.ask))) { factor = await askUnits(file.name, mx, au.f === 0.001 ? "t" : au.f === 1000 ? "m" : "k"); why = "указано вручную"; if (!factor) { report.push({ file: file.name, err: "загрузка отменена" }); continue; } }
     if (!factor) { factor = au.f; why = "определено автоматически " + au.why; }
     for (const { kind, f, sheet } of parsed) {
       const prof = chooseProfile(f, kind);
