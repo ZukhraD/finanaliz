@@ -230,6 +230,7 @@ function problems() {
     if (amt > 0 && fb.rec > 0 && amt < fb.rec) add("risk", "elim", "Запрос меньше потребности по базовому прогнозу", `Запрос ${fmt(amt)}, потребность ${fmt(fb.rec)}`, "Увеличьте сумму или сократите инвестиции/оборотный капитал в допущениях — иначе в прогнозе остаётся дефицит.");
     if (amt > 0 && fb.rec === 0 && fb.inv_need === 0 && fb.nwc_need === 0) add("chk", "elim", "Потребность в финансировании по прогнозу не подтверждается", `Запрос ${fmt(amt)}`, "Обоснуйте цель: добавьте инвестпроект или рост оборотного капитала в допущения, либо уменьшите сумму.");
   }
+  if (isOD()) { const keep = odFilter(out); out.length = 0; out.push(...keep); odProblems(add); }
   const rank = { crit: 0, risk: 1, chk: 2, nd: 3 };
   return out.sort((a, b) => rank[a.sev] - rank[b.sev]);
 }

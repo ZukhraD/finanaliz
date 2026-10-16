@@ -441,3 +441,8 @@ table.data.trust td.cell input { min-width: 260px; }
   .steps button { padding-top: 2px; padding-bottom: 2px; font-size: 13px; }
   .brand small { display: none; }
 }
+table.odfin td.lab { min-width: 320px; }
+table.odfin th select { max-width: 210px; font-weight: 600; }
+table.data tr.warn td { background: #FFF6E5; }
+table.odfin th .formula { display: block; font-weight: 400; margin-top: 2px; }
+table.odfin th { vertical-align: top; }

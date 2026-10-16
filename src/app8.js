@@ -285,7 +285,7 @@ function pageBank() {
   const k = COMP_TAB > nComp() ? 1 : COMP_TAB, bank = C.bank.filter(b => b.k === k);
   let h = `<div class="pagehead"><div class="lead"><h1>Банк</h1><p>Выписки по счетам и справки об оборотах в PDF или Excel. По выпискам выделяются чистые кредитовые обороты: из поступлений исключаются кредиты и займы, конвертация, переводы собственных средств и между своими счетами, выплата вкладов (депозитов), возвраты, финансовая помощь, субсидии (кроме ГЧП), штрафы и пени, выплаты вознаграждения, страховые выплаты, взносы наличными и пополнение через банкомат или кассу (кроме инкассации и поступлений по договорам с ИП). Валюта — по курсу НБ РК на дату поступления.</p></div>
     <div class="toolbar"><button class="btn primary" data-act="docdlg" data-mode="bank">Загрузить выписки и справки</button><button class="btn" data-act="bankadd">Обороты вручную</button><button class="btn" data-act="bankxls" title="Скачать Excel: помесячные сводные по контрагентам и товарам за прошлый год и текущий год с 1 января">Импорт</button></div></div>
-  ${compTabs()}<div id="probBanner" data-page="bank">${bannerHTML("bank")}</div>`;
+  ${compTabs()}<div id="probBanner" data-page="bank">${bannerHTML("bank")}</div>${isOD() && k === 1 ? odBankPanel(k) : ""}`;
   if (!bank.length) return h + `<div class="empty"><h2>Выписки и справки не загружены</h2><p class="muted">Загрузите выписки по счетам (PDF или Excel из интернет-банка) — по ним считаются чистые кредитовые обороты. Справки об оборотах дают только общие обороты, без исключений.</p><button class="btn primary" data-act="docdlg" data-mode="bank">Загрузить выписки и справки</button></div>`;
   h += `<section class="panel"><h2>Сверка с отчётностью — ${esc(compName(k))}</h2><p class="hint">Тыс. тг. ${LEGEND}. Доля чистых оборотов в выручке с НДС: 80–150 % — норма.</p>
     ${checksTable(k, BANK_IDS, "Для периодов анализа нет оборотов: проверьте месяцы в выписках и справках или заполните выручку в ОПиУ.")}
@@ -309,7 +309,7 @@ function pageBank() {
       let cr = 0, ex = 0, per, crT = 0, exT = 0;
       if (b.kind === "stmt") { (b.txs || []).forEach((t, i) => { if (!t.cr) return; const c = txCat(b, i, t, own)[0], v = txKzt(b, t, t.cr); cr += t.cr; crT += N(v); if (c) { ex += t.cr; exT += N(v); } }); per = `${b.from || b.txs?.[0]?.d || "?"} – ${b.to || b.txs?.[b.txs.length - 1]?.d || "?"}`; }
       else { const v = Object.values(b.months || {}); cr = b.rangeOnly ? N(b.total?.cr) : v.reduce((a, o) => a + N(o.cr), 0); per = b.rangeOnly ? `${b.from} – ${b.to}` : `${Object.keys(b.months || {}).length} мес.`; }
-      return `<tr><td class="lab">${esc(b.bank || "банк не указан")}<span class="formula">${esc(b.acc || "счёт не указан")} · ${esc(b.cur)}${b.cur !== "KZT" && b.kind !== "stmt" && isNum(b.rate) ? " по " + fmt(b.rate, "m1") : ""} · ${esc(b.file || "введено вручную")}</span></td><td>${b.kind === "stmt" ? `выписка<span class="formula">${(b.txs || []).length} оп.</span>` : "справка"}</td><td>${esc(per)}</td>
+      return `<tr><td class="lab">${esc(b.bank || "банк не указан")}<select class="inp" data-bwhere="${b.id}" style="max-width:150px;margin-left:8px;padding:2px 6px;font-size:12px">${[["our", "в Банке"], ["other", "в других банках"]].map(([v, t]) => `<option value="${v}"${odWhere(b) === v ? " selected" : ""}>${t}</option>`).join("")}</select><span class="formula">${esc(b.acc || "счёт не указан")} · ${esc(b.cur)}${b.cur !== "KZT" && b.kind !== "stmt" && isNum(b.rate) ? " по " + fmt(b.rate, "m1") : ""} · ${esc(b.file || "введено вручную")}</span></td><td>${b.kind === "stmt" ? `выписка<span class="formula">${(b.txs || []).length} оп.</span>` : "справка"}</td><td>${esc(per)}</td>
         ${b.kind === "stmt" && b.cur !== "KZT" ? `<td>${fmt(cr / 1000)}<span class="formula">≈ ${fmt(crT / 1000)} тыс. тг</span></td><td>${fmt(ex / 1000)}<span class="formula">≈ ${fmt(exT / 1000)} тыс. тг</span></td><td>${fmt((cr - ex) / 1000)}<span class="formula">≈ ${fmt((crT - exT) / 1000)} тыс. тг</span></td>`
           : `<td>${fmt(cr / 1000)}</td><td>${b.kind === "stmt" ? fmt(ex / 1000) : "—"}</td><td>${fmt((b.kind === "stmt" ? cr - ex : cr) / 1000)}</td>`}
         <td style="white-space:nowrap"><button class="btn ghost" data-bankedit="${b.id}">${b.kind === "stmt" ? "Операции" : "Открыть"}</button><button class="btn ghost danger" data-bankdel="${b.id}" title="Удалить" aria-label="Удалить">×</button></td></tr>`;
@@ -394,7 +394,7 @@ async function importDocs(files, kDef, mode) {
     } else if (kind === "stmt") {
       const s = r.stmt;
       if (!s.txs.length) { rep.push({ file: file.name, err: "в выписке не найдено операций (нужны колонки «Дата», «Дебет»/«Кредит» или «Сумма»)" }); continue; }
-      const doc = { id: uid(), kind: "stmt", k: compByBin(s.bin) || kDef, file: file.name, bank: s.bank, acc: s.acc, cur: s.cur || "KZT", from: s.from, to: s.to, txs: s.txs, ov: {}, t: Date.now() };
+      const doc = { id: uid(), kind: "stmt", where: DOC_WHERE, k: compByBin(s.bin) || kDef, file: file.name, bank: s.bank, acc: s.acc, cur: s.cur || "KZT", from: s.from, to: s.to, txs: s.txs, ov: {}, t: Date.now() };
       const saved = await stmtEditor(doc, true, s.bin && compByBin(s.bin) ? "Компания определена по БИН " + s.bin : "");
       rep.push(saved ? { file: file.name, page: "bank", ok: `выписка ${saved.acc || ""}: операций ${s.txs.length}` } : { file: file.name, err: "не сохранено" });
     } else {
@@ -403,7 +403,7 @@ async function importDocs(files, kDef, mode) {
       let n = 0;
       for (let i = 0; i < b.accounts.length; i++) {
         const a = b.accounts[i];
-        const doc = { id: uid(), kind: "turn", k: compByBin(b.bin) || kDef, file: file.name, bank: b.bank, acc: a.acc, cur: a.cur || "KZT", rate: null, months: a.months, total: a.total, rangeOnly: !!a.rangeOnly, from: b.period?.from || "", to: b.period?.to || "", t: Date.now() };
+        const doc = { id: uid(), kind: "turn", where: DOC_WHERE, k: compByBin(b.bin) || kDef, file: file.name, bank: b.bank, acc: a.acc, cur: a.cur || "KZT", rate: null, months: a.months, total: a.total, rangeOnly: !!a.rangeOnly, from: b.period?.from || "", to: b.period?.to || "", t: Date.now() };
         if (await bankEditor(doc, true, b.accounts.length > 1 ? `Счёт ${i + 1} из ${b.accounts.length}` : "")) n++;
       }
       rep.push(n ? { file: file.name, page: "bank", ok: `справка ${b.bank || ""}: счетов ${n}` } : { file: file.name, err: "не сохранено" });
@@ -414,11 +414,13 @@ async function importDocs(files, kDef, mode) {
   touch();
   return rep;
 }
+let DOC_WHERE = "our";
 async function docDialog(mode) {
   const compsOpts = C.companies.map((x, i) => `<option value="${i + 1}"${COMP_TAB === i + 1 ? " selected" : ""}>К${i + 1} · ${esc(x.name || "без названия")}</option>`).join("");
   const what = mode === "credit" ? "Кредитные отчёты ПКБ или ГКБ (HTML, PDF или Excel)" : mode === "tax" ? "Налоговые декларации (PDF из кабинета налогоплательщика или Excel)" : "Выписки по счетам и справки об оборотах (PDF или Excel из интернет-банка, CSV)";
   const body = `<p class="muted">${what} — можно сразу несколько файлов. Для сканов суммы вводятся вручную. Файлы читаются здесь же, в браузере, и никуда не отправляются.</p>
     <label class="f" style="margin:12px 0"><span>Компания (если в документе нет БИН из карточки)</span><select class="inp" id="pComp">${compsOpts}</select></label>
+    ${mode === "bank" ? `<div class="f" style="margin:0 0 12px"><span>Где открыт счёт (для расчёта лимита)</span><div class="chips" role="radiogroup">${[["our", "в Банке"], ["other", "в других банках"]].map(([v, t]) => `<label class="btn"><input type="radio" name="pw" value="${v}" ${(DOC_WHERE || "our") === v ? "checked" : ""}> ${t}</label>`).join("")}</div></div>` : ""}
     <label class="drop" id="pDrop"><input type="file" id="pFiles" multiple accept=".pdf,.html,.htm,.xlsx,.xlsm,.csv,.xls,application/pdf,text/html" style="display:none"><span id="pTxt">Перетащите файлы сюда или нажмите, чтобы выбрать</span></label>`;
   let files = [];
   setTimeout(() => {
@@ -428,7 +430,7 @@ async function docDialog(mode) {
     drop.ondragleave = () => drop.classList.remove("over");
     drop.ondrop = e => { e.preventDefault(); drop.classList.remove("over"); set(e.dataTransfer.files); };
   });
-  const k = await dialog(mode === "credit" ? "Загрузить кредитный отчёт" : mode === "tax" ? "Загрузить декларации" : "Загрузить выписки и справки", body, [{ t: "Отменить", v: null }, { t: "Загрузить", primary: true, v: () => +$("#pComp").value }]);
+  const k = await dialog(mode === "credit" ? "Загрузить кредитный отчёт" : mode === "tax" ? "Загрузить декларации" : "Загрузить выписки и справки", body, [{ t: "Отменить", v: null }, { t: "Загрузить", primary: true, v: () => { const w = document.querySelector("input[name=pw]:checked"); if (w) DOC_WHERE = w.value; return +$("#pComp").value; } }]);
   if (!k || !files.length) { if (k) toast("Файлы не выбраны"); return; }
   await runDocImport(files, k, mode);
 }

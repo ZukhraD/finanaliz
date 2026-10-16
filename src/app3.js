@@ -14,7 +14,8 @@ function render() {
   if (!C) return renderClients();
   PROB = problems();
   const steps = [["card", "Карточка"], ["trust", "Благонадёжность"], ["bal", "Баланс"], ["odr", "ОПиУ"], ["cf", "ДДС"], ["tax", "Налоги"], ["bank", "Банк"], ["credit", "Кредитная история"], ["coll", "Залог и гаранты"], ["cons", "Свод и прогноз"], ["an", "Анализ"], ["prob", "Проблемы"], ["concl", "Заключение"]];
-  if (!steps.some(st => st[0] === PAGE) && PAGE !== "map" && PAGE !== "log" && PAGE !== "norms") PAGE = "card";
+  if (isOD()) steps.splice(0, steps.length, ["card", "Карточка"], ["trust", "Благонадёжность"], ["fin", "Баланс + ОПиУ"], ["bank", "Банк"], ["credit", "Кредитная история"], ["prob", "Проблемы"], ["concl", "Заключение"]);
+  if (!steps.some(st => st[0] === PAGE) && PAGE !== "map" && PAGE !== "log" && PAGE !== "norms" && !(isOD() && (PAGE === "bal" || PAGE === "odr"))) PAGE = "card";
   document.body.innerHTML = `
   <div class="app">
     <nav class="rail" aria-label="Разделы">
@@ -132,6 +133,7 @@ function pageCard() {
     <label class="f"><span>Запрашиваемая сумма, тыс. тг</span><input class="inp" data-card="amount" data-num value="${esc(fmt(c.amount))}"></label>
     <label class="f"><span>Допуск сверок, тыс. тг</span><input class="inp" data-card="tol" data-num value="${esc(fmt(c.tol))}"></label>
   </div></section>
+  ${isOD() ? odCardPanel() : ""}
   ${okedPanel()}
   <section class="panel"><h2>Компании (${nComp()} из ${MAX_COMP})</h2><p class="hint">Для группы анализ строится по сумме компаний за вычетом внутригрупповых операций. БИН нужен, чтобы находить внутригрупповые операции. Кнопка «По БИН» сама загружает данные компании с ba.prg.kz (Параграф) — наружу уходит только БИН.</p>
     <div class="tablewrap" style="max-height:none"><table class="data form"><thead><tr><th class="lab">№</th><th style="text-align:left">Название</th><th style="text-align:left">БИН / ИИН</th><th style="text-align:left">Роль</th><th style="text-align:left">Форма</th><th style="text-align:left">Плательщик НДС</th><th style="text-align:left">Налоговый режим</th><th></th></tr></thead><tbody>${comps}</tbody></table></div>
@@ -392,7 +394,7 @@ function pageConcl() {
     <label class="f"><span>Статус</span><select class="inp" data-concl="status">${opts(["Черновик", "На проверке", "Утверждено"], C.concl.status)}</select></label></div>
     <label class="f" style="margin-top:12px"><span>Выводы кредитного менеджера</span><textarea class="inp" data-concl="text">${esc(C.concl.text)}</textarea></label>
     <label class="f" style="margin-top:12px"><span>Условия / ковенанты</span><textarea class="inp" data-concl="conditions" style="min-height:70px">${esc(C.concl.conditions)}</textarea></label></section>
-  <section class="panel" id="conclDoc">${conclusionHTML(false)}</section>`;
+  <section class="panel" id="conclDoc">${isOD() ? odConclusionHTML(false) : conclusionHTML(false)}</section>`;
 }
 
 /* ---------- настройка загрузки и журнал */
@@ -432,7 +434,7 @@ function pageNorms() {
   ${keys.map(k => { const o = RATN[k] || {}, d = RAT_DEF[k]; const cell = f => `<td class="cell"><input class="inp num" data-norm="${k}" data-f="${f}" value="${esc(o[f] !== undefined ? show(k, o[f]) : "")}" placeholder="${esc(show(k, d[f]))}"></td>`;
     return `<tr><td class="lab">${esc(RAT[k].label)}<span class="formula">${esc(RAT[k].formula || "")}</span></td><td>${esc(RAT[k].dir)}</td>${cell("green")}${cell("red")}${d.crit === null || d.crit === undefined ? "<td></td>" : cell("crit")}<td>${unit(k)}</td></tr>`; }).join("")}</tbody></table></div>${trustNormsPanel()}`;
 }
-const PAGES = { card: pageCard, bal: () => pageForm("bal"), odr: () => pageForm("odr"), cf: () => pageForm("cf"), tax: pageTax, bank: pageBank, credit: pageCredit, coll: pageColl, trust: pageTrust, cons: pageCons, an: pageAn, prob: pageProb, concl: pageConcl, map: pageMap, log: pageLog, norms: pageNorms };
+const PAGES = { fin: pageFin, card: pageCard, bal: () => pageForm("bal"), odr: () => pageForm("odr"), cf: () => pageForm("cf"), tax: pageTax, bank: pageBank, credit: pageCredit, coll: pageColl, trust: pageTrust, cons: pageCons, an: pageAn, prob: pageProb, concl: pageConcl, map: pageMap, log: pageLog, norms: pageNorms };
 
 /* ---------- диалоги */
 function dialog(title, body, buttons) {
@@ -596,7 +598,7 @@ document.addEventListener("change", e => {
     } else { o.name = t.value; o.manual = true; }
     touch(); return;
   }
-  if (d.card) { C.card[d.card] = d.num !== undefined ? parseNum(t.value) : t.value; touch(); if (d.card === "name") render(); return; }
+  if (d.card) { C.card[d.card] = d.num !== undefined ? parseNum(t.value) : t.value; touch(); if (d.card === "name" || d.card === "product" || (isOD() && (d.card === "amount" || d.card === "date"))) render(); return; }
   if (d.comp !== undefined) { C.companies[+d.comp][d.f] = t.value; touch(); return; }
   if (d.inact !== undefined) { C.inactive = C.inactive || {}; const k = +d.inact; C.inactive[k] = C.inactive[k] || {}; C.inactive[k][d.pid] = t.checked; touch(); render(); return; }
   if (d.role !== undefined) {

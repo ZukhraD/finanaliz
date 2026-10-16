@@ -171,7 +171,7 @@ function stmtTx(k) {   // все операции выписок компани�
     (b.txs || []).forEach((t, i) => {
       const m = t.d.slice(0, 7); if (!mine.has(m)) return;
       const cr = t.cr ? txKzt(b, t, t.cr) : 0, db = t.db ? txKzt(b, t, t.db) : 0;
-      out.push({ t, m, cr: N(cr), db: N(db), cat: t.cr ? txCat(b, i, t, own)[0] : null, dcat: t.db ? DocParse.classifyDebit(t, own) : null });
+      out.push({ t, m, cr: N(cr), db: N(db), cat: t.cr ? txCat(b, i, t, own)[0] : null, dcat: t.db ? DocParse.classifyDebit(t, own) : null, b, i });
     });
     for (const m of mine) seen.add(acc + "|" + m);
   }
@@ -361,9 +361,9 @@ async function svgPng(svg) {
 }
 async function exportWord() {
   const obj = C.obj, imgs = {};
-  try { const r = revChart(obj); if (r) imgs.rev = await svgPng(r); } catch (e) { /* без графика */ }
-  try { const b = forecast(obj, 0), s = forecast(obj, 1); if (!b.err) imgs.cash = await svgPng(cashChart(b, s).replace("<svg ", '<svg xmlns="http://www.w3.org/2000/svg" width="520" height="230" ')); } catch (e) { /* без графика */ }
-  const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><style>body{font-family:Roboto,Calibri,Arial;font-size:11pt;color:#272727}h1,h2{font-family:'Futura PT','Century Gothic',Arial;color:#272727}h1{font-size:16pt;border-bottom:3pt solid #023DFF;padding-bottom:4pt}h2{font-size:13pt;color:#023DFF}.small,.muted{font-family:Verdana;font-size:8pt;color:#666}td,th{border:1px solid #E5E4E2;padding:3px 6px;text-align:right}</style></head><body>${trHTML(conclusionHTML(true, imgs))}</body></html>`;
+  if (!isOD()) try { const r = revChart(obj); if (r) imgs.rev = await svgPng(r); } catch (e) { /* без графика */ }
+  if (!isOD()) try { const b = forecast(obj, 0), s = forecast(obj, 1); if (!b.err) imgs.cash = await svgPng(cashChart(b, s).replace("<svg ", '<svg xmlns="http://www.w3.org/2000/svg" width="520" height="230" ')); } catch (e) { /* без графика */ }
+  const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><style>body{font-family:Roboto,Calibri,Arial;font-size:11pt;color:#272727}h1,h2{font-family:'Futura PT','Century Gothic',Arial;color:#272727}h1{font-size:16pt;border-bottom:3pt solid #023DFF;padding-bottom:4pt}h2{font-size:13pt;color:#023DFF}.small,.muted{font-family:Verdana;font-size:8pt;color:#666}td,th{border:1px solid #E5E4E2;padding:3px 6px;text-align:right}</style></head><body>${trHTML(isOD() ? odConclusionHTML(true) : conclusionHTML(true, imgs))}</body></html>`;
   // MHTML: Word открывает документ вместе с картинками
   const B = "----=_FinKZ_" + uid(), enc = s => b64(new TextEncoder().encode(s)).replace(/.{76}/g, "$&\r\n");
   let mht = `MIME-Version: 1.0\r\nContent-Type: multipart/related; boundary="${B}"; type="text/html"\r\n\r\n--${B}\r\nContent-Type: text/html; charset="utf-8"\r\nContent-Transfer-Encoding: base64\r\nContent-Location: file:///C:/zakl/zakl.htm\r\n\r\n${enc(html)}\r\n`;
