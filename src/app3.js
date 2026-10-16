@@ -455,7 +455,7 @@ const UNITS_LAST = () => { try { return localStorage.getItem("finkz.units.last")
 async function importDialog() {
   const persOpts = C.periods.map((p, i) => `<option value="${p.id}"${i === C.periods.length - 1 ? " selected" : ""}>${esc(p.label)}</option>`).join("");
   const compsOpts = C.companies.map((x, i) => `<option value="${i + 1}"${COMP_TAB === i + 1 ? " selected" : ""}>К${i + 1} · ${esc(x.name || "без названия")}</option>`).join("");
-  const body = `<p class="muted">Баланс, ОПиУ и ОДДС в Excel (.xlsx, .xlsm, .xls) — можно сразу несколько файлов одной компании за один период. Файлы читаются здесь же, в браузере, и никуда не отправляются.</p>
+  const body = `<p class="muted">Баланс, ОПиУ, ОДДС и расшифровки в Excel (.xlsx, .xlsm, .xls) — можно сразу несколько файлов одной компании за один период. Из расшифровок берутся износ и амортизация, разовые доходы и расходы, дивиденды и ФОТ. Файлы читаются здесь же, в браузере, и никуда не отправляются.</p>
     <div class="grid2" style="margin:12px 0"><label class="f"><span>Компания</span><select class="inp" id="iComp">${compsOpts}</select></label><label class="f"><span>Период</span><select class="inp" id="iPer">${persOpts}</select></label></div>
     <div class="f" style="margin:4px 0 12px"><span>В каких единицах суммы в файлах отчётности?</span>
       <div class="chips" role="radiogroup" id="iUnits">${[["k", "тыс. тг — сохранить как есть"], ["t", "тг — перевести в тыс. тг"]].map(([v, t]) => `<label class="btn"><input type="radio" name="iu" value="${v}" ${UNITS_LAST() === v ? "checked" : ""}> ${t}</label>`).join("")}</div></div>
@@ -475,10 +475,18 @@ async function importDialog() {
   if (pdfs.length && !files.length) return runDocImport(pdfs, sel.k);
   if (!sel.u) { const f = await askUnits(files.map(f => f.name).join(", "), 0, ""); if (!f) return; sel.u = f === 0.001 ? "t" : f === 1000 ? "m" : "k"; }
   try { localStorage.setItem("finkz.units.last", sel.u); } catch (e) { /* не важно */ }
-  const rep = await importFiles(files, sel.k, sel.pid, askUnits, sel.u);
+  let rep = await importFiles(files, sel.k, sel.pid, askUnits, sel.u);
+  // расшифровки: износ, разовые статьи, дивиденды, ФОТ — из листов без кодов строк
+  const found = await decodeFiles(files, sel.k, sel.pid, { k: 1, t: 0.001, m: 1000 }[sel.u] || 1);
+  if (found.length) {
+    const decFiles = new Set(found.map(f => f.file));
+    rep = rep.filter(r => !(r.err && decFiles.has(r.file) && !r.sheet));
+    const n = await decodeReview(found, sel.k, sel.pid);
+    rep.push(...[...decFiles].map(f => ({ file: f, dec: true, n: n ? found.filter(x => x.file === f).length : 0 })));
+  }
   if (pdfs.length) { await importDocs(pdfs, sel.k); toast("PDF загружены — см. страницы «Налоги» и «Банк»"); }
   COMP_TAB = sel.k; if (!["bal", "odr", "cf"].includes(PAGE)) PAGE = "bal"; render();
-  const lines = rep.map(r => `<div class="logline"><b>${esc(r.file)}</b>${r.sheet ? " / " + esc(r.sheet) : ""}: ${r.err ? stChip("crit", "не загружено") + " " + esc(r.err) : `${stChip("ok", SRC_TXT[r.kind])} ${r.n} строк, ${esc(r.prof)}, ${esc(r.units)}${r.over ? `, перезаписано ${r.over}` : ""}${r.miss.length ? `<details class="small muted" style="margin-top:4px"><summary>Строк из шаблона нет в файле: ${r.miss.length} — это нормально, если таких строк в форме нет</summary>Коды: ${esc(r.miss.join(", "))}. Если строка в форме есть, но не загрузилась — проверьте «Настройку загрузки».</details>` : ""}`}</div>`).join("");
+  const lines = rep.map(r => r.dec ? `<div class="logline"><b>${esc(r.file)}</b>: ${r.n ? stChip("ok", "Расшифровка") + " найдено строк: " + r.n + ", записано в ОПиУ" : stChip("nd", "Расшифровка") + " не записано"}</div>` : `<div class="logline"><b>${esc(r.file)}</b>${r.sheet ? " / " + esc(r.sheet) : ""}: ${r.err ? stChip("crit", "не загружено") + " " + esc(r.err) : `${stChip("ok", SRC_TXT[r.kind])} ${r.n} строк, ${esc(r.prof)}, ${esc(r.units)}${r.over ? `, перезаписано ${r.over}` : ""}${r.miss.length ? `<details class="small muted" style="margin-top:4px"><summary>Строк из шаблона нет в файле: ${r.miss.length} — это нормально, если таких строк в форме нет</summary>Коды: ${esc(r.miss.join(", "))}. Если строка в форме есть, но не загрузилась — проверьте «Настройку загрузки».</details>` : ""}`}</div>`).join("");
   await dialog("Результат загрузки", lines + `<p class="small muted" style="margin-top:10px">Загруженные значения отмечены полосой слева; проверьте их и страницу «Сверки».</p>`, [{ t: "Готово", primary: true, v: true }]);
 }
 
