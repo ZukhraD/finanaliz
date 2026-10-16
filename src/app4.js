@@ -154,6 +154,9 @@ function problems() {
     const nm = compName(k);
     pers.forEach((p, i) => {
       const pid = p.id, g = key => val(k, key, pid);
+      if (inactive(k, pid)) return;
+      const pr = nComp() > 1 ? partialReg(k, pid) : "";
+      if (pr) add("chk", "card", `${nm}, ${p.label}: неполный период деятельности`, `зарегистрирована ${pr}`, "Компания работала не весь период: обороты и прибыль за него ниже годовых. Учитывайте это при сравнении с другими периодами и в прогнозе.");
       for (const blk of ["bal", "odr"]) {
         const miss = INPUT_KEYS.filter(key => LINE[key].typ === "in" && LINE[key].block === blk && rawComp(k, key, pid) === null);
         if (miss.length && miss.length < INPUT_KEYS.filter(key => LINE[key].typ === "in" && LINE[key].block === blk).length)

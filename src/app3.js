@@ -123,6 +123,7 @@ function pageCard() {
       <td><input class="inp" data-per="${i}" data-f="date" type="date" value="${esc(p.date)}"></td>
       <td><select class="inp" data-per="${i}" data-f="basis">${opts(S.lists.rep, p.basis)}</select></td>
       <td><input class="inp" data-per="${i}" data-f="months" type="number" min="1" max="12" value="${esc(p.months)}"></td>
+      ${nComp() > 1 ? `<td><div class="roles">${C.companies.map((x, j) => { const k = j + 1, on = inactive(k, p.id), au = C.inactive?.[k]?.[p.id] === undefined && inactAuto(k, p.id); return `<label title="${esc(compName(k))}${au ? " — по дате регистрации " + esc(C.trust[k].regDate) : ""}"><input type="checkbox" data-inact="${k}" data-pid="${p.id}" ${on ? "checked" : ""}>К${k}${au ? " (авто)" : ""}</label>`; }).join("")}</div></td>` : ""}
       <td>${C.periods.length > 2 ? `<button class="btn ghost danger" data-delper="${i}">Удалить</button>` : ""}</td></tr>`).join("");
   return `<div class="pagehead"><div class="lead"><h1>Карточка клиента</h1><p>Клиент, состав группы и отчётные периоды. Периоды идут от старого к новому; у всех компаний группы они одинаковые.</p></div></div>
   <section class="panel"><h2>Клиент и запрос</h2><div class="grid2">
@@ -135,8 +136,8 @@ function pageCard() {
   <section class="panel"><h2>Компании (${nComp()} из ${MAX_COMP})</h2><p class="hint">Для группы анализ строится по сумме компаний за вычетом внутригрупповых операций. БИН нужен, чтобы находить внутригрупповые операции. Кнопка «По БИН» сама загружает данные компании с ba.prg.kz (Параграф) — наружу уходит только БИН.</p>
     <div class="tablewrap" style="max-height:none"><table class="data form"><thead><tr><th class="lab">№</th><th style="text-align:left">Название</th><th style="text-align:left">БИН / ИИН</th><th style="text-align:left">Роль</th><th style="text-align:left">Форма</th><th style="text-align:left">Плательщик НДС</th><th style="text-align:left">Налоговый режим</th><th></th></tr></thead><tbody>${comps}</tbody></table></div>
     ${nComp() < MAX_COMP ? `<p style="margin-top:10px"><button class="btn" data-act="addcomp">Добавить компанию</button></p>` : ""}</section>
-  <section class="panel"><h2>Отчётные периоды (${C.periods.length} из ${MAX_PER})</h2><p class="hint">Выберите год и квартал — дата, число месяцев и название подставятся сами. Для квартала основа «Нарастающим итогом» означает отчётность с начала года (3, 6, 9 мес.), «Отдельный период» — только за этот квартал. Обороты пересчитываются в годовые как ×12/месяцев.</p>
-    <div class="tablewrap" style="max-height:none"><table class="data form"><thead><tr><th class="lab">№</th><th style="text-align:left">Название</th><th style="text-align:left">Год</th><th style="text-align:left">Период</th><th style="text-align:left">Дата отчёта</th><th style="text-align:left">Основа</th><th style="text-align:left">Месяцев</th><th></th></tr></thead><tbody>${pers}</tbody></table></div>
+  <section class="panel"><h2>Отчётные периоды (${C.periods.length} из ${MAX_PER})</h2><p class="hint">Выберите год и квартал — дата, число месяцев и название подставятся сами. Для квартала основа «Нарастающим итогом» означает отчётность с начала года (3, 6, 9 мес.), «Отдельный период» — только за этот квартал. Обороты пересчитываются в годовые как ×12/месяцев.${nComp() > 1 ? " «Не было деятельности» — компания ещё не существовала или не работала: за этот период она входит в группу нулями и не требует отчётности. Отметка ставится сама, если дата регистрации (из «Подтянуть по БИН» или «Благонадёжности») позже даты отчёта; её можно снять или поставить вручную." : ""}</p>
+    <div class="tablewrap" style="max-height:none"><table class="data form"><thead><tr><th class="lab">№</th><th style="text-align:left">Название</th><th style="text-align:left">Год</th><th style="text-align:left">Период</th><th style="text-align:left">Дата отчёта</th><th style="text-align:left">Основа</th><th style="text-align:left">Месяцев</th>${nComp() > 1 ? '<th style="text-align:left">Не было деятельности</th>' : ""}<th></th></tr></thead><tbody>${pers}</tbody></table></div>
     ${C.periods.length < MAX_PER ? `<p style="margin-top:10px"><button class="btn" data-act="addper">Добавить следующий год</button> <button class="btn" data-act="addq">Добавить квартал</button> <button class="btn ghost" data-act="addperfirst">Добавить более ранний</button></p>` : ""}</section>`;
 }
 
@@ -200,6 +201,7 @@ function pageForm(block) {
   return `<div class="pagehead"><div class="lead"><h1>${ttl}</h1><p>${intro}</p></div>
     <div class="toolbar"><button class="btn primary" data-act="importdlg">Загрузить формы из Excel</button><button class="btn ghost danger" data-act="clearform" data-block="${block}">Очистить данные</button></div></div>
   ${compTabs()}<div id="probBanner" data-page="${block}">${bannerHTML(block)}</div>
+  ${(() => { const ina = C.periods.filter(p => inactive(k, p.id)); return ina.length ? `<p class="hint" style="margin:0 0 10px">${esc(compName(k))}: нет деятельности в периодах ${ina.map(p => "«" + esc(p.label) + "»").join(", ")} — заполнять не нужно, в группе считается нулями (отметка — на «Карточке»).</p>` : ""; })()}
   ${linesTable(k, [block], true)}`;
 }
 const FC_PCT = new Set(["growth", "shock", "gm_adj", "infl", "capex_pct", "overrun", "rshock"]);
@@ -578,6 +580,7 @@ document.addEventListener("change", e => {
   }
   if (d.card) { C.card[d.card] = d.num !== undefined ? parseNum(t.value) : t.value; touch(); if (d.card === "name") render(); return; }
   if (d.comp !== undefined) { C.companies[+d.comp][d.f] = t.value; touch(); return; }
+  if (d.inact !== undefined) { C.inactive = C.inactive || {}; const k = +d.inact; C.inactive[k] = C.inactive[k] || {}; C.inactive[k][d.pid] = t.checked; touch(); render(); return; }
   if (d.role !== undefined) {
     const x = C.companies[+d.role], set = new Set(compRoles(x));
     if (t.checked) set.add(t.value); else set.delete(t.value);

@@ -153,10 +153,18 @@ function elimVal(key, pid) {
   if (key === "c_cogs") return e("e_rev") - e("e_rev_opex") - (e("e_up") - e("e_up_open"));
   return e(key);
 }
+/* компания ещё не вела деятельность в периоде (зарегистрирована позже даты отчёта) — в группе считается нулями */
+function regDateIso(k) { const m = /(\d{2})\.(\d{2})\.(\d{4})/.exec(C?.trust?.[k]?.regDate || ""); return m ? `${m[3]}-${m[2]}-${m[1]}` : ""; }
+const perById = pid => C.periods.find(x => x.id === pid);
+function inactAuto(k, pid) { const r = regDateIso(k), p = perById(pid); return !!(r && p && p.date && r > p.date); }
+function inactive(k, pid) { if (!C || nComp() < 2) return false; const v = C.inactive?.[k]?.[pid]; return v === undefined ? inactAuto(k, pid) : !!v; }
+function perStartIso(p) { const d = new Date(p.date); if (!p.date || isNaN(d)) return ""; const s = new Date(Date.UTC(d.getFullYear(), d.getMonth() - (N(p.months) || 12) + 1, 1)); return s.toISOString().slice(0, 10); }
+// дата регистрации внутри периода — первый (неполный) год деятельности
+function partialReg(k, pid) { const r = regDateIso(k), p = perById(pid); if (!r || !p || !p.date || r > p.date) return ""; return r > perStartIso(p) ? C.trust[k].regDate : ""; }
 function rawObj(obj, key, pid) {
   if (obj > 0 || nComp() === 1) return rawComp(obj > 0 ? obj : 1, key, pid);
   let s = 0;
-  for (let k = 1; k <= nComp(); k++) { const v = rawComp(k, key, pid); if (v === null) return null; s += v; }
+  for (let k = 1; k <= nComp(); k++) { if (inactive(k, pid)) continue; const v = rawComp(k, key, pid); if (v === null) return null; s += v; }
   const em = S.elim_map[key];
   if (em) s -= em.reduce((a, e) => a + elimVal(e, pid), 0);
   return s;
