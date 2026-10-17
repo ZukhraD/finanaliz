@@ -187,21 +187,24 @@ setInterval(() => { if (cloudOn() && !document.hidden) cloudSync(); }, 60000);
 window.addEventListener("focus", () => { if (cloudOn()) cloudSync(); });
 
 /* --- интерфейс */
-function cloudStatus() {
+function cloudStatus(short) {
   if (!cloudOn()) return "";
   if (CLOUD.busy) return tr("Синхронизация…");
-  if (CLOUD.err) return tr("Облачная база: нет связи") + " (" + CLOUD.err + ")";
-  return CLOUD.last ? tr("Облачная база: синхронизировано") + " " + dTime(CLOUD.last) : tr("Облачная база подключена");
+  if (CLOUD.err) return short ? tr("нет связи с сервером") : tr("Облачная база: нет связи") + " (" + CLOUD.err + ")";
+  if (!CLOUD.last) return short ? tr("подключено") : tr("Облачная база подключена");
+  return short ? "✓ " + tr("сохранено") + " " + dTime(CLOUD.last) : tr("Облачная база: синхронизировано") + " " + dTime(CLOUD.last);
 }
 function paintCloud() {
   const t = cloudStatus();
-  document.querySelectorAll("[data-cloudst]").forEach(el => { el.textContent = t; el.classList.toggle("bad", !!CLOUD.err); });
+  document.querySelectorAll("[data-cloudst]").forEach(el => { el.textContent = el.dataset.cloudst === "s" ? cloudStatus(true) : t; el.classList.toggle("bad", !!CLOUD.err); });
 }
-function cloudHeaderHTML() {
-  if (location.protocol === "file:") return "";
-  return cloudOn()
-    ? `<span class="cloudchip" title="${esc(tr("Ваши клиенты хранятся на сервере в зашифрованном виде и доступны с любого устройства после входа. Другие сотрудники их не видят."))}">☁ <b data-nt>${esc(CLOUD.name || CLOUD.login)}</b> <span data-cloudst class="small">${esc(cloudStatus())}</span></span><button class="btn ghost" data-act="cloudsync">Синхронизировать</button><button class="btn ghost" data-act="cloudacc">Учётная запись</button><button class="btn ghost" data-act="cloudout">Выйти</button>`
-    : `<button class="btn ghost" data-act="cloudin">Войти / Регистрация</button>`;
+function cloudHeaderHTML(pin = "") {
+  const online = location.protocol !== "file:";
+  if (!cloudOn()) return `${online ? `<button class="btn primary sm" data-act="cloudin">Войти / Регистрация</button>` : ""}${pin ? `<details class="umenu"><summary class="btn ghost sm" aria-label="Ещё">⋯</summary><div class="mlist">${pin}</div></details>` : ""}`;
+  const nm = CLOUD.name || CLOUD.login, ini = nm.split(/\s+/).map(w => w[0] || "").join("").slice(0, 2).toUpperCase();
+  return `<details class="umenu"><summary class="ubtn" title="${esc(tr("Ваши клиенты хранятся на сервере в зашифрованном виде и доступны с любого устройства после входа. Другие сотрудники их не видят."))}">
+      <span class="ava" data-nt>${esc(ini)}</span><span class="uinfo"><b data-nt>${esc(nm)}</b><span data-cloudst="s" class="ust" title="${esc(cloudStatus())}">${esc(cloudStatus(true))}</span></span><span class="caret">▾</span></summary>
+    <div class="mlist"><button class="mi" data-act="cloudsync">Синхронизировать</button><button class="mi" data-act="cloudacc">Учётная запись</button>${pin}<hr><button class="mi" data-act="cloudout">Выйти</button></div></details>`;
 }
 const CL_TABS = [["in", "Вход"], ["reg", "Регистрация"], ["rec", "Забыли пароль?"]];
 async function cloudDialog(mode = "in") {
@@ -286,3 +289,5 @@ document.addEventListener("click", async e => {
   if (!CLOUD.key) { CLOUD.token = ""; clSave(); return; }
   await cloudCfg(); render(); cloudSync();
 })();
+// меню пользователя: закрывать после выбора пункта и при щелчке мимо
+document.addEventListener("click", e => { document.querySelectorAll("details.umenu[open]").forEach(d => { if (!d.contains(e.target) || e.target.closest(".mi")) d.removeAttribute("open"); }); });

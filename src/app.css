@@ -465,3 +465,27 @@ table.fcq tr.sub td.lab { padding-left: 28px; }
 .cloudchip { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; padding: 4px 10px; border-radius: 999px; background: #eef2ff; color: #023dff; }
 .cloudchip .small.bad, [data-cloudst].bad { color: #c81e1e; }
 .rcode { font: 600 20px/1.4 ui-monospace, Menlo, Consolas, monospace; letter-spacing: 1px; background: #f4f6ff; border: 1px dashed #023dff; border-radius: 8px; padding: 10px 14px; text-align: center; margin: 12px 0; }
+
+/* шапка главной: название, язык, меню пользователя */
+.hbar { gap: 14px; }
+.htitle { display: flex; flex-direction: column; line-height: 1.15; }
+.htitle .hnote { margin: 2px 0 0 !important; font-size: 11.5px; color: #777; }
+.hsec { margin-left: auto; display: flex; gap: 10px; align-items: center; }
+.hsec .lang { margin-left: 0; }
+.btn.sm { padding: 7px 14px; font-size: 13px; }
+.umenu { position: relative; }
+.umenu > summary { list-style: none; cursor: pointer; }
+.umenu > summary::-webkit-details-marker { display: none; }
+.ubtn { display: flex; align-items: center; gap: 10px; padding: 5px 12px 5px 5px; border-radius: 999px; background: #eef2ff; border: 1px solid #dce4ff; }
+.ubtn:hover { border-color: #023dff; }
+.ava { width: 34px; height: 34px; border-radius: 50%; background: #023dff; color: #fff; display: grid; place-items: center; font-weight: 700; font-size: 13px; flex: none; }
+.uinfo { display: flex; flex-direction: column; line-height: 1.2; max-width: 220px; }
+.uinfo b { font-family: var(--sans, inherit) !important; font-size: 14px !important; font-weight: 600; color: #272727; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.uinfo .ust { font-size: 11.5px; color: #3a8a3a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.uinfo .ust.bad { color: #c81e1e; }
+.caret { color: #023dff; font-size: 12px; }
+.mlist { position: absolute; right: 0; top: calc(100% + 6px); min-width: 230px; background: #fff; border: 1px solid #e5e4e2; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.12); padding: 6px; z-index: 50; display: flex; flex-direction: column; }
+.mlist .mi { text-align: left; background: none; border: 0; padding: 9px 12px; border-radius: 8px; font: inherit; font-size: 14px; color: #272727; cursor: pointer; }
+.mlist .mi:hover { background: #f2f4ff; color: #023dff; }
+.mlist hr { border: 0; border-top: 1px solid #eee; margin: 4px 6px; }
+@media (max-width: 700px) { .uinfo { display: none; } .ubtn { padding: 4px; } .caret { display: none; } }
