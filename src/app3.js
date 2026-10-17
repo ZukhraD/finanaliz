@@ -20,7 +20,7 @@ function render() {
   document.body.innerHTML = `
   <div class="app">
     <nav class="rail" aria-label="Разделы">
-      <div class="brand">Финансовый анализ<small>компании и группы Казахстана</small>${langSwitch()}</div>
+      <div class="brand">Финансовый анализ${langSwitch()}</div>
       <button class="back" data-act="clients">← К списку клиентов</button>
       <div class="client"><b>${esc(C.card.name)}</b><span class="small">${nComp()} комп. · ${C.periods.length} пер.</span></div>
       <ol class="steps">${steps.map(([id, t]) => `<li class="num"><button data-page="${id}" ${PAGE === id ? 'aria-current="page"' : ""}>${t}<span class="pdot" data-pdot="${id}"></span></button></li>`).join("")}</ol>
