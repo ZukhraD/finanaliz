@@ -86,17 +86,17 @@ function renderClients() {
     ${(() => { const n = list.filter(c => !c.demo && (!c.saved || c.saved < c.updated)).length; return n ? `<div class="hwarn"><b>${n === 1 ? "1 клиент изменён" : n + " клиентов изменены"} после последнего сохранения в файл.</b> Данные хранятся только в этом браузере — если очистить его, они пропадут. <button class="btn primary" data-act="backup">Сохранить всех клиентов в файл</button></div>` : ""; })()}
     <section class="hero">
       <div class="hblue">
-        <h1>Финансовый анализ компаний и групп Казахстана</h1>
+        <h1>Финансовый анализ</h1>
         <div class="hbtn"><button class="btn lime" data-act="new">Новый клиент</button><button class="btn wline" data-act="import">Открыть файл клиента</button>${list.length ? `<button class="btn wline" data-act="backup">Сохранить всех в файл</button>` : ""}</div>
       </div>
       <div class="hside">
         <div class="hgraph"><span class="k">${list.length}</span><span class="l">${list.length === 1 ? "клиент в работе" : "клиентов в базе"}</span>
-          <div class="hsplit"><span><b>${done}</b> утверждено</span><span><b>${list.length - done}</b> в работе</span></div></div>
+          <div class="hsplit"><span><b>${done}</b> утверждено</span><span><b>${list.length - done}</b> в работе</span></div>${list.some(c => c.demo) ? "" : `<button class="hdemo" data-act="demo">Открыть пример заполнения →</button>`}</div>
       </div>
     </section>
     <section class="clist">
-      <div class="chead"><h2>Клиенты</h2>${list.length > 3 ? `<input class="inp search" id="q" placeholder="Поиск по названию, БИН или ОКЭД" aria-label="Поиск клиента">` : ""}${list.length && !list.some(c => c.demo) ? `<button class="btn ghost" data-act="demo">Открыть пример «Тест-Агро»</button>` : ""}</div>
-      ${list.length ? `<ul class="crows">${rows}</ul>` : `<div class="empty"><h2>Пока нет ни одного клиента</h2><p class="muted">Создайте клиента или откройте пример, чтобы посмотреть, как всё устроено.</p><div class="hbtn" style="justify-content:center"><button class="btn primary" data-act="new">Новый клиент</button><button class="btn ghost" data-act="demo">Открыть пример «Тест-Агро»</button></div></div>`}
+      <div class="chead"><h2>Клиенты</h2>${list.length > 3 ? `<input class="inp search" id="q" placeholder="Поиск по названию, БИН или ОКЭД" aria-label="Поиск клиента">` : ""}</div>
+      ${list.length ? `<ul class="crows">${rows}</ul>` : `<div class="empty"><h2>Пока нет ни одного клиента</h2><p class="muted">Создайте клиента или откройте пример, чтобы посмотреть, как всё устроено.</p><div class="hbtn" style="justify-content:center"><button class="btn primary" data-act="new">Новый клиент</button><button class="btn ghost" data-act="demo">Открыть пример заполнения</button></div></div>`}
     </section>
     <footer class="hfoot"><span>© 2026 Создан ОФКК Костанай</span><span>Резервная копия клиента — кнопка «Файл»; открыть на другом компьютере — «Открыть файл клиента».</span></footer>
   </div><div id="toast" class="toast" role="status"></div>${DIALOG}`;

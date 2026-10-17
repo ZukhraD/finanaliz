@@ -195,7 +195,7 @@ function odConclusionHTML(forWord) {
   const th = forWord ? ' style="border:1px solid #E5E4E2;padding:4px 8px;background:#E5E4E2"' : "";
   const mark = s => ({ ok: "✓ соответствует", chk: "⚠ требует проверки", crit: "✗ не соответствует", nd: "— нет данных" }[s]);
   let n = 0; const H2 = t => `<h2 style="margin-top:16px">${++n}. ${t}</h2>`;
-  const reqT = grp => `<table ${T}><thead><tr><th${th}>№</th><th${th} style="text-align:left">Требование</th><th${th} style="text-align:left">Факт</th><th${th}>Соответствие</th></tr></thead><tbody>${R.out.filter(x => x.grp === grp).map((x, i) => `<tr><td>${i + 1}</td><td style="text-align:left">${esc(x.title)}</td><td style="text-align:left">${esc(x.fact)}</td><td>${mark(x.st)}</td></tr>`).join("")}</tbody></table>`;
+  const reqT = grp => `<table ${forWord ? T.replace('width:100%"', 'width:100%;table-layout:fixed"') : 'class="data reqt"'}><colgroup><col style="width:5%"><col style="width:45%"><col style="width:32%"><col style="width:18%"></colgroup><thead><tr><th${th}>№</th><th${th} style="text-align:left">Требование</th><th${th} style="text-align:left">Факт</th><th${th}>Соответствие</th></tr></thead><tbody>${R.out.filter(x => x.grp === grp).map((x, i) => `<tr><td>${i + 1}</td><td style="text-align:left">${esc(x.title)}</td><td style="text-align:left">${esc(x.fact)}</td><td>${mark(x.st)}</td></tr>`).join("")}</tbody></table>`;
   const bad = R.out.filter(x => x.st === "crit"), warn = R.out.filter(x => x.st === "chk" || x.st === "nd");
   const t = C.trust[1] || {};
   let h = `<h1>Заключение по овердрафту</h1>

@@ -552,3 +552,24 @@ table.loans td.cell:first-child input.inp { min-width: 130px !important; }
 table.loans td.cell input.inp { min-width: 58px !important; }
 table.loans th { white-space: normal; font-size: 12.5px; }
 table.loans td.cell:nth-child(8) select.inp { min-width: 162px !important; } table.loans th:nth-child(2), table.loans th:nth-child(3), table.loans th:nth-child(8) { text-align: left; padding-left: 8px; }
+
+/* прокрутка таблиц: тонкая аккуратная полоса вместо серой колеи */
+.tablewrap { scrollbar-gutter: auto !important; scrollbar-width: thin; scrollbar-color: #c9d2ec transparent; }
+.tablewrap::-webkit-scrollbar { width: 8px; height: 8px; }
+.tablewrap::-webkit-scrollbar-track { background: transparent; }
+.tablewrap::-webkit-scrollbar-thumb { background: #c9d2ec; border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
+.tablewrap::-webkit-scrollbar-thumb:hover { background: #9fb0e0; background-clip: padding-box; }
+.tablewrap::-webkit-scrollbar-corner { background: transparent; }
+.tablewrap table.data tr > *:last-child { padding-right: 18px; }
+/* поля форм одной высоты, подписи сверху, поля выровнены по нижнему краю */
+label.f { display: flex; flex-direction: column; gap: 6px; }
+label.f > span { margin-bottom: auto; }
+label.f > .inp, label.f > input.inp, label.f > select.inp { height: 40px; box-sizing: border-box; line-height: normal; }
+label.f > textarea.inp { height: auto; }
+select.inp { padding-top: 0; padding-bottom: 0; }
+/* требования в заключении по овердрафту */
+table.reqt { table-layout: fixed; width: 100%; }
+table.reqt td, table.reqt th { white-space: normal !important; overflow-wrap: anywhere; vertical-align: top; }
+/* пример на главной */
+.hdemo { margin-top: 18px; align-self: flex-start; background: none; border: 0; padding: 0; color: #9fe39b; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+.hdemo:hover { color: #fff; text-decoration: underline; }
