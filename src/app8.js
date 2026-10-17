@@ -263,7 +263,7 @@ const LEGEND = `<span class="st ok">в допуске</span> <span class="st chk
 function pageTax() {
   ensureDocs();
   const k = COMP_TAB > nComp() ? 1 : COMP_TAB, decl = C.decl.filter(d => d.k === k);
-  let h = `<div class="pagehead"><div class="lead"><h1>Налоги</h1><p>Налоговые декларации разных форм (100.00, 910.00, 300.00, 200.00 и др.) в PDF или Excel. Суммы из деклараций сверяются с ОПиУ; расхождения подсвечиваются здесь и в форме. Файлы читаются в этом браузере и никуда не отправляются.</p></div>
+  let h = `<div class="pagehead"><div class="lead"><h1>Налоги</h1><p>Налоговые декларации в PDF или Excel. Суммы из деклараций сверяются с ОПиУ.</p></div>
     <div class="toolbar"><button class="btn primary" data-act="docdlg" data-mode="tax">Загрузить декларации</button><button class="btn" data-act="decladd">Ввести вручную</button></div></div>
   ${compTabs()}<div id="probBanner" data-page="tax">${bannerHTML("tax")}</div>`;
   if (!decl.length) return h + `<div class="empty"><h2>Декларации не загружены</h2><p class="muted">Загрузите декларации из кабинета налогоплательщика (PDF) — или введите суммы вручную, если документ отсканирован.</p><button class="btn primary" data-act="docdlg" data-mode="tax">Загрузить декларации</button></div>`;
@@ -283,7 +283,7 @@ function pageTax() {
 function pageBank() {
   ensureDocs();
   const k = COMP_TAB > nComp() ? 1 : COMP_TAB, bank = C.bank.filter(b => b.k === k);
-  let h = `<div class="pagehead"><div class="lead"><h1>Банк</h1><p>Выписки по счетам и справки об оборотах в PDF или Excel. Из поступлений выделяются чистые кредитовые обороты — без займов, своих переводов, возвратов, помощи и субсидий <span class="qhint" title="Исключаются: кредиты и займы, конвертация, переводы собственных средств и между своими счетами, выплата вкладов (депозитов), возвраты, финансовая помощь, субсидии (кроме ГЧП), штрафы и пени, выплаты вознаграждения, страховые выплаты, взносы наличными и пополнение через банкомат или кассу (кроме инкассации и поступлений по договорам с ИП).">?</span>. Валюта — по курсу НБ РК на дату поступления.</p></div>
+  let h = `<div class="pagehead"><div class="lead"><h1>Банк</h1><p>Выписки по счетам и справки об оборотах в PDF или Excel. Валюта — по курсу НБ РК на дату поступления.</p></div>
     <div class="toolbar"><button class="btn primary" data-act="docdlg" data-mode="bank">Загрузить выписки и справки</button><button class="btn" data-act="bankadd">Обороты вручную</button><button class="btn" data-act="bankxls" title="Скачать Excel: помесячные сводные по контрагентам и товарам за прошлый год и текущий год с 1 января">Импорт</button></div></div>
   ${compTabs()}<div id="probBanner" data-page="bank">${bannerHTML("bank")}</div>${isOD() && k === 1 ? odBankPanel(k) : ""}`;
   if (!bank.length) return h + `<div class="empty"><h2>Выписки и справки не загружены</h2><p class="muted">Загрузите выписки по счетам (PDF или Excel из интернет-банка) — по ним считаются чистые кредитовые обороты. Справки об оборотах дают только общие обороты, без исключений.</p><button class="btn primary" data-act="docdlg" data-mode="bank">Загрузить выписки и справки</button></div>`;

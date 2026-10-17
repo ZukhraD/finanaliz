@@ -56,7 +56,7 @@ function collCover() {
 function pageCredit() {
   ensureCredit();
   const k = COMP_TAB > nComp() ? 1 : COMP_TAB, list = C.cr.filter(x => x.k === k), s = crSummary(k);
-  let h = `<div class="pagehead"><div class="lead"><h1>Кредитная история</h1><p>Кредитные отчёты ПКБ и ГКБ (PDF или Excel): действующие займы, просрочки и обязательства гаранта; сверка долга с балансом и перенос займов в прогноз. Суммы — в тыс. тг.</p></div>
+  let h = `<div class="pagehead"><div class="lead"><h1>Кредитная история</h1><p>Кредитные отчёты ПКБ или ГКБ (HTML, PDF или Excel)</p></div>
     <div class="toolbar"><button class="btn primary" data-act="docdlg" data-mode="credit">Загрузить кредитный отчёт</button><button class="btn" data-act="cradd">Добавить кредит вручную</button></div></div>
   ${compTabs()}<div id="probBanner" data-page="credit">${bannerHTML("credit")}</div>`;
   if (!list.length) h += `<div class="empty"><h2>Кредитный отчёт не загружен</h2><p class="muted">Загрузите отчёт ПКБ или ГКБ по компании — или добавьте кредиты вручную по справкам банков.</p><button class="btn primary" data-act="docdlg" data-mode="credit">Загрузить кредитный отчёт</button></div>`;
@@ -90,7 +90,7 @@ function pageCredit() {
 function pageColl() {
   for (const x of C.coll || []) if (x.type === "Гарантия АО «ФРП «Даму»»") x.type = "Гарантия АО «ФРП «Даму»";
   ensureCredit();
-  let h = `<div class="pagehead"><div class="lead"><h1>Залог и гаранты</h1><p>Обеспечение по запросу: залоги с дисконтами, покрытие и LTV; гаранты, созаёмщики и залогодатели. Суммы — в тыс. тг.</p></div>
+  let h = `<div class="pagehead"><div class="lead"><h1>Залог и гаранты</h1></div>
     <div class="toolbar"><button class="btn primary" data-act="colladd">Добавить залог</button><button class="btn" data-act="guaradd">Добавить гаранта</button></div></div>
   <div id="probBanner" data-page="coll">${bannerHTML("coll")}</div>`;
   // залог

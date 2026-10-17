@@ -580,3 +580,5 @@ table.reqt td, table.reqt th { white-space: normal !important; overflow-wrap: an
 /* отрицательные значения */
 td.negv, .neg, td .negv { color: #D92D20 !important; }
 input.negv, .inp.negv { color: #D92D20 !important; }
+.phead { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.phead h2 { margin: 0; }

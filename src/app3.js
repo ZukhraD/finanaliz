@@ -194,13 +194,13 @@ function compTabs() {
 }
 const FORM_INTRO = {
   bal: ["Бухгалтерский баланс", "Ввод — голубые ячейки. Итоги «по отчётности» нужны для автоматической сверки."],
-  odr: ["Отчёт о прибылях и убытках", "Расходы — положительными числами. Износ, разовые статьи, дивиденды и ФОТ — из расшифровок (в форме их нет)."],
-  cf: ["Отчёт о движении денежных средств", "Стандартная форма МФ РК (приложение 3 к приказу №404, прямой метод). Выплаты — положительными числами; итоги разделов, чистые потоки и остаток денег на конец периода считаются сами."],
+  odr: ["Отчёт о прибылях и убытках", ""],
+  cf: ["Отчёт о движении денежных средств", ""],
 };
 function pageForm(block) {
   const k = COMP_TAB > nComp() ? 1 : COMP_TAB;
   const [ttl, intro] = FORM_INTRO[block];
-  return `<div class="pagehead"><div class="lead"><h1>${ttl}</h1><p>${intro}</p></div>
+  return `<div class="pagehead"><div class="lead"><h1>${ttl}</h1>${intro ? `<p>${intro}</p>` : ""}</div>
     <div class="toolbar"><button class="btn primary" data-act="importdlg">Загрузить формы из Excel</button><button class="btn ghost danger" data-act="clearform" data-block="${block}">Очистить данные</button></div></div>
   ${compTabs()}<div id="probBanner" data-page="${block}">${bannerHTML(block)}</div>
   ${(() => { const ina = C.periods.filter(p => inactive(k, p.id)); return ina.length ? `<p class="hint" style="margin:0 0 10px">${esc(compName(k))}: нет деятельности в периодах ${ina.map(p => "«" + esc(p.label) + "»").join(", ")} — заполнять не нужно, в группе считается нулями (отметка — на «Карточке»).</p>` : ""; })()}
@@ -213,7 +213,7 @@ const FC_LAB = { growth: "Рост выручки, % в год", shock: "Шок 
 const fcIn = (path, v, pct) => `<input class="inp num" data-fc="${path}" ${pct ? "data-pct" : ""} value="${esc(isNum(v) ? fmt(pct ? v * 100 : v, pct ? "m1" : "m") : (v ?? ""))}">`;
 function pageCons() {
   const pers = C.periods, f = fcParams();
-  let h = `<div class="pagehead"><div class="lead"><h1>Свод группы</h1><p>Группа = сумма компаний за вычетом внутригрупповых операций. Прогноз по кварталам — на странице «Прогноз».</p></div>
+  let h = `<div class="pagehead"><div class="lead"><h1>Свод группы</h1><p>Группа = сумма компаний за вычетом внутригрупповых операций.</p></div>
     <div class="toolbar">${objSelect()}</div></div><div id="probBanner" data-page="cons">${bannerHTML("cons")}</div>`;
   if (nComp() > 1) {
     h += `<section class="panel"><h2>Внутригрупповые операции</h2><p class="hint">Тыс. тг. Пусто — таких операций нет. Упрощения: владение 100%, без гудвилла и налогового эффекта.</p>
@@ -317,7 +317,7 @@ function pageProb() {
   const pers = C.periods;
   const groups = [["card", "Карточка"], ["trust", "Благонадёжность"], ["bal", "Баланс"], ["odr", "ОПиУ"], ["cf", "ДДС"], ["tax", "Налоги"], ["bank", "Банк"], ["credit", "Кредитная история"], ["coll", "Залог и гаранты"], ["cons", "Свод группы"], ["fc", "Прогноз"], ["an", "Анализ"]];
   const cnt = s => PROB.filter(p => p.sev === s).length;
-  let h = `<div class="pagehead"><div class="lead"><h1>Проблемы и решения</h1><p>Всё, что мешает выводу: ошибки и пропуски в данных, расхождения, зоны риска и дефициты в прогнозе — с подсказкой, что делать. Ячейки с проблемами подсвечены на страницах форм.</p></div></div>
+  let h = `<div class="pagehead"><div class="lead"><h1>Проблемы и решения</h1><p>Всё, что мешает выводу</p></div></div>
     <div class="chips" style="margin-bottom:14px">${["crit", "risk", "chk", "nd"].map(s => `<span class="st ${s}">${SEV[s]}: ${cnt(s)}</span>`).join("")}</div>`;
   if (!PROB.length) h += `<div class="empty"><h2>Проблем не найдено</h2><p class="muted">Данные заполнены, сверки сходятся, показатели вне зон риска.</p></div>`;
   for (const [id, t] of groups) {
@@ -345,13 +345,15 @@ function riskSummary(obj) {
 }
 function pageConcl() {
   const rs = riskSummary(C.obj);
-  return `<div class="pagehead"><div class="lead"><h1>Заключение</h1><p>Цифры и оценки подставляются автоматически из анализа; выводы и рекомендацию пишет кредитный менеджер.</p></div>
+  C.concl = C.concl || {};
+  if (!C.concl.manual && typeof ensureAutoConcl === "function" && ensureAutoConcl(!!C.concl.auto)) saveAll();
+  return `<div class="pagehead"><div class="lead"><h1>Заключение</h1></div>
     <div class="toolbar">${objSelect()}<button class="btn primary" data-act="word">Скачать в Word</button><button class="btn" data-act="print">Печать / PDF</button><button class="btn" data-act="aipdf" title="Только цифры, без названий, БИН, адресов и имён">Скачать в PDF для ИИ</button></div></div>
-  <section class="panel noprint"><h2>Оценка и решение</h2><p class="hint">Автоиндикатор: ${stChip(rs.ind[0], rs.ind[1])}</p><div class="grid2">
+  <section class="panel noprint"><div class="phead"><h2>Оценка и решение</h2><button class="btn ghost sm" data-act="autoconcl">Сформировать заново</button></div><p class="hint">Автоиндикатор: ${stChip(rs.ind[0], rs.ind[1])}</p><div class="grid2">
     <label class="f"><span>Рекомендация</span><select class="inp" data-concl="decision"><option value=""></option>${opts(S.lists.decision, C.concl.decision)}</select></label>
     <label class="f"><span>Статус</span><select class="inp" data-concl="status">${opts(["Черновик", "На проверке", "Утверждено"], C.concl.status)}</select></label></div>
-    <label class="f" style="margin-top:12px"><span>Выводы кредитного менеджера</span><textarea class="inp" data-concl="text">${esc(C.concl.text)}</textarea></label>
-    <label class="f" style="margin-top:12px"><span>Условия / ковенанты</span><textarea class="inp" data-concl="conditions" style="min-height:70px">${esc(C.concl.conditions)}</textarea></label></section>
+    <label class="f" style="margin-top:12px"><span>Выводы</span><textarea class="inp" data-concl="text" style="min-height:260px">${esc(C.concl.text)}</textarea></label>
+    <label class="f" style="margin-top:12px"><span>Условия / ковенанты</span><textarea class="inp" data-concl="conditions" style="min-height:120px">${esc(C.concl.conditions)}</textarea></label></section>
   <section class="panel" id="conclDoc">${isOD() ? odConclusionHTML(false) : conclusionHTML(false)}</section>`;
 }
 

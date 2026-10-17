@@ -264,7 +264,7 @@ function pageFc() {
   const f = fcParams(), q = fcqParams(), pers = C.periods, o = fcq();
   const loans = f.loans || [];
   const years = []; for (let y = (q.ly || 2025) - 3; y <= (q.ly || 2025) + 1; y++) years.push(y);
-  let h = `<div class="pagehead"><div class="lead"><h1>Прогноз</h1><p>Прогноз движения денежных средств по кварталам — по шаблону банка. База — последний период «${esc(pers[pers.length - 1]?.label || "")}» в годовом выражении. Тыс. тг.</p></div>
+  let h = `<div class="pagehead"><div class="lead"><h1>Прогноз</h1></div>
     <div class="toolbar">${objSelect()}<button class="btn" data-act="fcqxls">Выгрузить в Excel</button></div></div><div id="probBanner" data-page="fc">${bannerHTML("fc")}</div>
   <section class="panel"><h2>Квартал последней отчётности</h2><div class="grid2 tight" style="grid-template-columns:repeat(4,minmax(0,1fr))">
     <label class="f"><span>Квартал</span><select class="inp" data-fcqp="lq">${[1, 2, 3, 4].map(n => `<option value="${n}"${q.lq == n ? " selected" : ""}>${n}</option>`).join("")}</select></label>

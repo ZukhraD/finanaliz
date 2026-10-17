@@ -284,7 +284,7 @@ function aiMd(s) {   // упрощённый markdown → HTML (заголовк
 }
 function pageAi() {
   const A = aiOpts(), key = AI_SESSION_KEY || aiGet(AI_KEY), model = A.model || aiGet(AI_MODEL) || "gemini-flash-latest";
-  const prompt = A.prompt || aiDefaultPrompt();
+  const prompt = aiDefaultPrompt();
   return `<div class="pagehead"><div class="lead"><h1>Анализ с помощью ИИ</h1><p>Анализ в Gemini по обезличенному PDF: в Google уходят только цифры и стандартные названия показателей — без названий компаний, БИН, адресов, имён, контрагентов и банков.</p></div></div>
   <section class="panel"><h2>1. Обезличенный PDF</h2>
     <p class="hint">Состав: запрос (продукт, сумма, цель), баланс, ОПиУ и коэффициенты по периодам, поступления по выпискам помесячно, кредитная история (кредиторы — «Кредитор 1, 2…»), обеспечение (только вид и суммы), результаты проверок благонадёжности, квартальный прогноз, найденные проблемы. Компании группы — «Компания 1, 2…».</p>
@@ -301,9 +301,7 @@ function pageAi() {
         <label class="f"><span>Модель</span><input class="inp" data-aimodel list="aiModels" value="${esc(model)}"><datalist id="aiModels">${AI_MODELS.map(m => `<option value="${esc(m)}">`).join("")}</datalist></label></div>
         <label class="chk" style="display:block;margin-top:6px"><input type="checkbox" data-airemember ${aiGet(AI_KEY) ? "checked" : ""}> Запомнить ключ в этом браузере</label>
         <p style="margin-top:8px"><button class="btn primary" data-act="aisend" ${AI_BUSY ? "disabled" : ""}>${AI_BUSY ? "Gemini анализирует…" : "Отправить в Gemini"}</button> <button class="btn ghost" data-act="aimodels">Проверить ключ и модели</button></p></div>
-    </div>
-    <label class="f" style="margin-top:12px"><span>Запрос к ИИ</span><textarea class="inp" data-aiprompt style="min-height:110px">${esc(prompt)}</textarea></label>
-    <p class="small muted"><button class="btn ghost" data-act="aiprompt0">Вернуть стандартный запрос</button></p></section>
+    </div></section>
   <section class="panel"><h2>3. Ответ ИИ</h2>
     <p class="hint">${A.t ? `Получен ${esc(dDateTime(A.t))}${A.src ? " · " + esc(A.src) : ""}. ` : ""}Ответ ИИ — справочный: проверьте выводы по исходным данным. Его можно поправить в поле ниже.</p>
     <label class="chk" style="display:block"><input type="checkbox" data-aiopt="inConcl" ${A.inConcl ? "checked" : ""}> Добавить ответ в заключение (Word) отдельным разделом «Анализ ИИ — справочно»</label>
@@ -333,7 +331,7 @@ async function aiSend() {
   const A = aiOpts(); if (AI_BUSY) return;
   const model = (document.querySelector("[data-aimodel]")?.value || "gemini-flash-latest").trim();
   const pdf = aiPdf(); if (!pdf) return;
-  const prompt = A.prompt || aiDefaultPrompt();
+  const prompt = aiDefaultPrompt();
   AI_BUSY = true; render();
   try {
     const j = await aiFetch(`models/${encodeURIComponent(model)}:generateContent`, { method: "POST", body: JSON.stringify({ contents: [{ role: "user", parts: [{ inline_data: { mime_type: "application/pdf", data: b64(pdf) } }, { text: prompt }] }] }) });
@@ -354,7 +352,7 @@ document.addEventListener("click", e => {
   else if (a === "aisend") aiSend();
   else if (a === "aimodels") aiModels();
   else if (a === "aiprompt0") { aiOpts().prompt = ""; touch(); render(); }
-  else if (a === "aicopy") { const t = aiOpts().prompt || aiDefaultPrompt(); (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => toast(tr("Запрос скопирован")), () => toast(tr("Скопируйте текст запроса вручную"))); }
+  else if (a === "aicopy") { const t = aiDefaultPrompt(); (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => toast(tr("Запрос скопирован")), () => toast(tr("Скопируйте текст запроса вручную"))); }
 });
 document.addEventListener("change", e => {
   const t = e.target, d = t.dataset; if (!C) return;
