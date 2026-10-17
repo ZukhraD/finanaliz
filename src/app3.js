@@ -13,19 +13,20 @@ function render() {
   if (LOCK.on && !LOCK.key) return renderLock();
   if (!C) return renderClients();
   PROB = problems();
-  const steps = [["card", "Карточка"], ["trust", "Благонадёжность"], ["bal", "Баланс"], ["odr", "ОПиУ"], ["cf", "ДДС"], ["tax", "Налоги"], ["bank", "Банк"], ["credit", "Кредитная история"], ["coll", "Залог и гаранты"], ...(nComp() > 1 ? [["cons", "Свод группы"]] : []), ["fc", "Прогноз"], ["an", "Анализ"], ["prob", "Проблемы"], ["concl", "Заключение"], ["ai", "Анализ с помощью ИИ"]];
-  if (isOD()) steps.splice(0, steps.length, ["card", "Карточка"], ["trust", "Благонадёжность"], ["fin", "Баланс + ОПиУ"], ["bank", "Банк"], ["credit", "Кредитная история"], ["prob", "Проблемы"], ["concl", "Заключение"], ["ai", "Анализ с помощью ИИ"]);
+  const steps = [["card", "Карточка"], ["trust", "Благонадёжность"], ["bal", "Баланс"], ["odr", "ОПиУ"], ["cf", "ДДС"], ["tax", "Налоги"], ["bank", "Банк"], ["credit", "Кредитная история"], ["coll", "Залог и гаранты"], ...(nComp() > 1 ? [["cons", "Свод группы"]] : []), ["fc", "Прогноз"], ["an", "Анализ"], ["prob", "Проблемы"], ["concl", "Заключение"]];
+  if (isOD()) steps.splice(0, steps.length, ["card", "Карточка"], ["trust", "Благонадёжность"], ["fin", "Баланс + ОПиУ"], ["bank", "Банк"], ["credit", "Кредитная история"], ["prob", "Проблемы"], ["concl", "Заключение"]);
   if (PAGE === "cons" && nComp() < 2) PAGE = "fc";
-  if (!steps.some(st => st[0] === PAGE) && PAGE !== "map" && PAGE !== "log" && PAGE !== "norms" && !(isOD() && (PAGE === "bal" || PAGE === "odr"))) PAGE = "card";
+  if (!steps.some(st => st[0] === PAGE) && PAGE !== "ai" && PAGE !== "map" && PAGE !== "log" && PAGE !== "norms" && !(isOD() && (PAGE === "bal" || PAGE === "odr"))) PAGE = "card";
   document.body.innerHTML = `
   <div class="app">
     <nav class="rail" aria-label="Разделы">
-      <div class="brand">Финансовый анализ<small>компании и группы РК · локально</small>${langSwitch()}</div>
+      <div class="brand">Финансовый анализ<small>компании и группы Казахстана</small>${langSwitch()}</div>
       <button class="back" data-act="clients">← К списку клиентов</button>
       <div class="client"><b>${esc(C.card.name)}</b><span class="small">${nComp()} комп. · ${C.periods.length} пер.</span></div>
       <ol class="steps">${steps.map(([id, t]) => `<li class="num"><button data-page="${id}" ${PAGE === id ? 'aria-current="page"' : ""}>${t}<span class="pdot" data-pdot="${id}"></span></button></li>`).join("")}</ol>
-      <ul class="steps"><li><button data-page="map" ${PAGE === "map" ? 'aria-current="page"' : ""}>Настройка загрузки</button></li><li><button data-page="norms" ${PAGE === "norms" ? 'aria-current="page"' : ""}>Нормативы</button></li><li><button data-page="log" ${PAGE === "log" ? 'aria-current="page"' : ""}>Журнал</button></li></ul>
-      <div class="foot"><button data-act="export">Сохранить файл клиента</button><span id="saved" class="saved"></span>${typeof cloudOn === "function" && cloudOn() ? `<span class="saved" data-cloudst>${esc(cloudStatus())}</span>` : ""}<p class="copy">© 2026 Создан ОФКК Костанай</p></div>
+      <ul class="steps aistep"><li><button data-page="ai" ${PAGE === "ai" ? 'aria-current="page"' : ""}><span class="spark" aria-hidden="true">✦</span>Анализ с помощью ИИ</button></li></ul>
+      <ul class="steps svc"><li><button data-page="map" ${PAGE === "map" ? 'aria-current="page"' : ""}>Настройка загрузки</button></li><li><button data-page="norms" ${PAGE === "norms" ? 'aria-current="page"' : ""}>Нормативы</button></li><li><button data-page="log" ${PAGE === "log" ? 'aria-current="page"' : ""}>Журнал</button></li></ul>
+      <div class="foot"><button data-act="export">Сохранить файл клиента</button>${typeof cloudOn === "function" && cloudOn() ? `<span class="saved" data-cloudst="s">${esc(cloudStatus(true))}</span>` : `<span id="saved" class="saved"></span>`}<p class="copy">© 2026 Создан ОФКК Костанай</p></div>
     </nav>
     <main class="main" id="main">${PAGES[PAGE]()}</main>
   </div><div id="toast" class="toast" role="status"></div>${DIALOG}`;

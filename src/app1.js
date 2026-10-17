@@ -120,7 +120,7 @@ function newClient(name) {
     card: { name: name || "Новый клиент", bin: "", activity: "", oked: [{ code: "", name: "" }], region: "", analyst: "", date: new Date().toISOString().slice(0, 10),
       purpose: S.lists.fpurpose[0], product: S.lists.product[0], amount: null, tol: 1 },
     companies: [{ name: "", bin: "", role: S.lists.role[0], form: S.lists.form[0], vat: "Да", regime: S.lists.regime[0] }],
-    periods: [y - 3, y - 2, y - 1].map(yy => ({ id: uid(), label: String(yy), date: `${yy}-12-31`, basis: "Годовой", months: 12 })),
+    periods: [y - 2, y - 1].map(yy => ({ id: uid(), label: String(yy), date: `${yy}-12-31`, basis: "Годовой", months: 12 })),
     obj: 0, _odr2: true, data: {}, src: {}, elim: {}, elimOk: {}, concl: { text: "", decision: "", conditions: "", status: "Черновик" }, log: [],
     custom: {}, settings: { units: "auto", prev: false }, decl: [], bank: [], dset: { pct: 0.02, bpct: 0.1 }, cr: [], coll: [], guar: []
   };

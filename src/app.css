@@ -489,3 +489,33 @@ table.fcq tr.sub td.lab { padding-left: 28px; }
 .mlist .mi:hover { background: #f2f4ff; color: #023dff; }
 .mlist hr { border: 0; border-top: 1px solid #eee; margin: 4px 6px; }
 @media (max-width: 700px) { .uinfo { display: none; } .ubtn { padding: 4px; } .caret { display: none; } }
+
+/* ---- полировка: ширина текстов, левое меню, ИИ ---- */
+.pagehead p { max-width: 900px; font-size: 13px; }
+.panel .hint { max-width: 960px; font-size: 13px; line-height: 1.55; }
+.panel > p.hint + .grid2, .panel > p.hint + div { margin-top: 4px; }
+.steps button { display: flex; align-items: center; gap: 10px; padding-left: 8px !important; }
+.steps li.num button::before { position: static !important; transform: none !important; flex: 0 0 22px; width: 22px !important; height: 22px !important; font-size: 11px !important; font-variant-numeric: tabular-nums; line-height: 1; }
+.steps .pdot { margin-left: auto; position: static !important; }
+.steps.aistep { margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,.18); }
+.steps.aistep button { font-weight: 600; }
+.steps .spark { flex: 0 0 22px; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: linear-gradient(135deg, #7CE38B, #fff); color: #023DFF; font-size: 12px; }
+.steps.svc { margin-top: 12px; }
+.steps.svc button { padding-left: 40px !important; opacity: .9; font-size: 13.5px; }
+.rail .foot .saved { display: block; margin-top: 2px; }
+.aigrid { display: grid; grid-template-columns: 1fr 1.35fr; gap: 16px; }
+.aigrid > div { background: #f7f8fc; border: 1px solid #e8ebf5; border-radius: 12px; padding: 14px 16px; }
+.aigrid h3 { margin-top: 0; }
+@media (max-width: 900px) { .aigrid { grid-template-columns: 1fr; } }
+.steps .pdot { transform: none !important; }
+.steps button { padding-top: clamp(3px, .55vh, 7px) !important; padding-bottom: clamp(3px, .55vh, 7px) !important; padding-right: 10px !important; line-height: 1.2; }
+.steps li.num button::before, .steps .spark { flex-basis: 20px !important; width: 20px !important; height: 20px !important; }
+.steps.aistep { margin-top: clamp(6px, 1vh, 12px); padding-top: clamp(6px, 1vh, 10px); }
+.steps.svc { margin-top: clamp(4px, 1vh, 12px); }
+.steps.svc button { padding-left: 38px !important; }
+@media (max-height: 760px) { .steps li.num button::before, .steps .spark { flex-basis: 18px !important; width: 18px !important; height: 18px !important; font-size: 10px !important; } }
+.steps.svc button { padding-top: 2px !important; padding-bottom: 2px !important; }
+.steps.aistep { margin-top: 8px; padding-top: 8px; }
+.rail .client { padding-bottom: 8px !important; }
+@media (max-height: 940px) { .rail .copy { display: none; } }
+.qhint { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; background: #e8edff; color: #023dff; font-size: 11px; font-weight: 700; cursor: help; vertical-align: 1px; }

@@ -293,7 +293,7 @@ function pageAi() {
     <p style="margin-top:10px"><button class="btn primary" data-act="aipdf">Скачать в PDF для ИИ</button> <button class="btn ghost" data-act="aiprev">${A._prev ? "Скрыть содержимое" : "Посмотреть, что попадёт в PDF"}</button></p>
     ${A._prev ? `<div class="aiprev" data-nt>${aiPreviewHTML()}</div>` : ""}</section>
   <section class="panel"><h2>2. Gemini</h2>
-    <div class="grid2">
+    <div class="aigrid">
       <div><h3>Вариант А — вручную</h3><p class="hint">Откройте Gemini, приложите скачанный PDF и вставьте запрос (кнопка «Скопировать запрос»). Ответ вставьте ниже, в поле «Ответ ИИ».</p>
         <p><a class="btn" href="https://gemini.google.com/app" target="_blank" rel="noopener noreferrer">Открыть Gemini</a> <button class="btn ghost" data-act="aicopy">Скопировать запрос</button></p></div>
       <div><h3>Вариант Б — по API-ключу</h3><p class="hint">Сайт сам отправит обезличенный PDF и запрос в Gemini API и покажет ответ. Ключ создаётся в Google AI Studio (aistudio.google.com → Get API key). Учтите условия Google: на бесплатном тарифе данные запросов могут использоваться для улучшения сервисов.</p>
