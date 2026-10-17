@@ -62,7 +62,7 @@ async function api(a, body = {}) {
 }
 async function cloudCfg() {
   if (location.protocol === "file:") return (CLOUD.cfg = { configured: false, offline: true });
-  try { const r = await fetch("/api/cloud", { cache: "no-store" }); CLOUD.cfg = await r.json(); } catch (e) { CLOUD.cfg = { configured: false, error: e.message }; }
+  try { const r = await fetch("/api/cloud", { cache: "no-store" }); const t = await r.text(); try { CLOUD.cfg = JSON.parse(t); } catch (e) { CLOUD.cfg = { configured: false, error: "HTTP " + r.status + ": " + t.slice(0, 200) }; } } catch (e) { CLOUD.cfg = { configured: false, error: e.message }; }
   return CLOUD.cfg;
 }
 
@@ -206,7 +206,7 @@ function cloudHeaderHTML() {
 const CL_TABS = [["in", "Вход"], ["reg", "Регистрация"], ["rec", "Забыли пароль?"]];
 async function cloudDialog(mode = "in") {
   const cfg = await cloudCfg();
-  if (!cfg.configured) { await dialog("Облачная база", `<p>${cfg.offline ? "Файл открыт с компьютера — облачная база работает только на сайте." : "Облачная база ещё не подключена на сервере. Администратору: в Vercel → Storage подключить Upstash Redis к проекту, затем Redeploy."}</p>`, [{ t: "Понятно", primary: true, v: true }]); return; }
+  if (!cfg.configured) { await dialog("Облачная база", `<p>${cfg.offline ? "Файл открыт с компьютера — облачная база работает только на сайте." : "Облачная база ещё не подключена на сервере. Администратору: в Vercel → Storage подключить Upstash Redis к проекту, затем Redeploy."}</p>${cfg.diag || cfg.error ? `<p class="small muted" data-nt>Диагностика: ${esc(JSON.stringify(cfg.diag || { error: cfg.error }))}</p>` : ""}`, [{ t: "Понятно", primary: true, v: true }]); return; }
   const tabs = `<div class="tabs" role="tablist" style="margin-bottom:12px">${CL_TABS.map(([k, t]) => `<button role="tab" aria-selected="${mode === k}" data-cltab="${k}">${t}</button>`).join("")}</div>`;
   const fld = (id, lab, type = "text", ac = "off", val = "") => `<label class="f"><span>${lab}</span><input class="inp" id="${id}" type="${type}" autocomplete="${ac}" value="${esc(val)}"></label>`;
   const hint = { in: "После входа ваши клиенты загрузятся на это устройство, а изменения будут сохраняться на сервере в зашифрованном виде. Другие сотрудники ваших клиентов не видят.",

@@ -58,7 +58,12 @@ module.exports = async (req, res) => {
   const invHash = s => crypto.createHash("sha256").update("finkz-invite|" + String(s || "")).digest("base64");
   const inviteOk = async s => (INVITE_ENV ? eq(s || "", INVITE_ENV) : eq(invHash(s), (await one("GET", P + "invite")) || "-"));
   try {
-    if (req.method === "GET") return send(200, { ok: true, configured, partSize: PART, mode: "personal", firstUser: configured && !INVITE_ENV && !(await one("GET", P + "invite")) });
+    if (req.method === "GET") {   // состояние + диагностика (только названия найденных переменных, без значений)
+      const envNames = Object.keys(process.env).filter(k => /(KV|REDIS|UPSTASH|STORAGE)/i.test(k)).sort();
+      let firstUser = false, redisErr = "";
+      if (configured) { try { firstUser = !INVITE_ENV && !(await one("GET", P + "invite")); } catch (e) { redisErr = e.message; } }
+      return send(200, { ok: true, configured: configured && !redisErr, partSize: PART, mode: "personal", firstUser, diag: { url: !!URL_, token: !!TOK, envNames, redisErr } });
+    }
     if (req.method !== "POST") return send(405, { ok: false, error: "Только GET/POST" });
     if (!configured) return send(503, { ok: false, error: "Хранилище не настроено: подключите Upstash Redis в Vercel" });
     const b = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
