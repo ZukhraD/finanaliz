@@ -13,8 +13,8 @@ function render() {
   if (LOCK.on && !LOCK.key) return renderLock();
   if (!C) return renderClients();
   PROB = problems();
-  const steps = [["card", "Карточка"], ["trust", "Благонадёжность"], ["bal", "Баланс"], ["odr", "ОПиУ"], ["cf", "ДДС"], ["tax", "Налоги"], ["bank", "Банк"], ["credit", "Кредитная история"], ["coll", "Залог и гаранты"], ...(nComp() > 1 ? [["cons", "Свод группы"]] : []), ["fc", "Прогноз"], ["an", "Анализ"], ["prob", "Проблемы"], ["concl", "Заключение"]];
-  if (isOD()) steps.splice(0, steps.length, ["card", "Карточка"], ["trust", "Благонадёжность"], ["fin", "Баланс + ОПиУ"], ["bank", "Банк"], ["credit", "Кредитная история"], ["prob", "Проблемы"], ["concl", "Заключение"]);
+  const steps = [["card", "Карточка клиента"], ["trust", "Благонадёжность"], ["bal", "Баланс"], ["odr", "ОПиУ"], ["cf", "ДДС"], ["tax", "Налоги"], ["bank", "Банк"], ["credit", "Кредитная история"], ["coll", "Залог и гаранты"], ...(nComp() > 1 ? [["cons", "Свод группы"]] : []), ["fc", "Прогноз"], ["an", "Анализ"], ["prob", "Проблемы"], ["concl", "Заключение"]];
+  if (isOD()) steps.splice(0, steps.length, ["card", "Карточка клиента"], ["trust", "Благонадёжность"], ["fin", "Баланс + ОПиУ"], ["bank", "Банк"], ["credit", "Кредитная история"], ["prob", "Проблемы"], ["concl", "Заключение"]);
   if (PAGE === "cons" && nComp() < 2) PAGE = "fc";
   if (!steps.some(st => st[0] === PAGE) && PAGE !== "ai" && PAGE !== "map" && PAGE !== "log" && PAGE !== "norms" && !(isOD() && (PAGE === "bal" || PAGE === "odr"))) PAGE = "card";
   document.body.innerHTML = `
@@ -105,6 +105,7 @@ function renderClients() {
 }
 
 /* ---------- карточка */
+const REGIONS = ["г. Астана", "г. Алматы", "г. Шымкент", "Абайская область", "Акмолинская область", "Актюбинская область", "Алматинская область", "Атырауская область", "Восточно-Казахстанская область", "Жамбылская область", "Жетысуская область", "Западно-Казахстанская область", "Карагандинская область", "Костанайская область", "Кызылординская область", "Мангистауская область", "Павлодарская область", "Северо-Казахстанская область", "Туркестанская область", "Улытауская область"];
 function pageCard() {
   const c = C.card;
   const f = (key, lab, type = "text", ph = "") => `<label class="f"><span>${lab}</span><input class="inp" data-card="${key}" type="${type}" value="${esc(c[key] ?? "")}"${ph ? ` placeholder="${esc(ph)}"` : ""}></label>`;
@@ -128,7 +129,7 @@ function pageCard() {
       <td>${C.periods.length > 2 ? `<button class="btn ghost danger" data-delper="${i}">Удалить</button>` : ""}</td></tr>`).join("");
   return `<div class="pagehead"><div class="lead"><h1>Карточка клиента</h1><p>Клиент, состав группы и отчётные периоды. Периоды идут от старого к новому; у всех компаний группы они одинаковые.</p></div></div>
   <section class="panel"><h2>Клиент и запрос</h2><div class="grid2">
-    ${f("name", "Клиент / группа")}${f("bin", "БИН основной компании")}${f("activity", "Описание деятельности (свободно)")}${f("region", "Регион")}
+    ${f("name", "Клиент / группа")}${f("bin", "БИН основной компании")}${f("activity", "Описание деятельности (свободно)")}<label class="f"><span>Регион</span><select class="inp${c.region ? "" : " ph"}" data-card="region"><option value=""${c.region ? "" : " selected"} disabled hidden>Выберите регион</option>${(REGIONS.includes(c.region) || !c.region ? REGIONS : [c.region, ...REGIONS]).map(r => `<option value="${esc(r)}"${r === c.region ? " selected" : ""}>${esc(r)}</option>`).join("")}</select></label>
     ${f("analyst", "Кредитный менеджер", "text", "ФИО")}${f("date", "Дата анализа", "date")}${sel("purpose", "Цель финансирования", S.lists.fpurpose)}${sel("product", "Продукт", S.lists.product)}
     <label class="f"><span>Запрашиваемая сумма, тыс. тг</span><input class="inp" data-card="amount" data-num value="${esc(fmt(c.amount))}"></label>
     <label class="f" title="Допустимая разница при автоматических сверках (баланс, ОПиУ, декларации, банк, кредиты): расхождения меньше этой суммы считаются округлением и не попадают в «Проблемы»."><span>Допуск расхождений, тыс. тг <span class="qhint">?</span></span><input class="inp" data-card="tol" data-num value="${esc(fmt(c.tol))}"></label>
@@ -315,7 +316,7 @@ function discrepancies() {
 }
 function pageProb() {
   const pers = C.periods;
-  const groups = [["card", "Карточка"], ["trust", "Благонадёжность"], ["bal", "Баланс"], ["odr", "ОПиУ"], ["cf", "ДДС"], ["tax", "Налоги"], ["bank", "Банк"], ["credit", "Кредитная история"], ["coll", "Залог и гаранты"], ["cons", "Свод группы"], ["fc", "Прогноз"], ["an", "Анализ"]];
+  const groups = [["card", "Карточка клиента"], ["trust", "Благонадёжность"], ["bal", "Баланс"], ["odr", "ОПиУ"], ["cf", "ДДС"], ["tax", "Налоги"], ["bank", "Банк"], ["credit", "Кредитная история"], ["coll", "Залог и гаранты"], ["cons", "Свод группы"], ["fc", "Прогноз"], ["an", "Анализ"]];
   const cnt = s => PROB.filter(p => p.sev === s).length;
   let h = `<div class="pagehead"><div class="lead"><h1>Проблемы и решения</h1><p>Всё, что мешает выводу</p></div></div>
     <div class="chips" style="margin-bottom:14px">${["crit", "risk", "chk", "nd"].map(s => `<span class="st ${s}">${SEV[s]}: ${cnt(s)}</span>`).join("")}</div>`;
@@ -558,7 +559,7 @@ document.addEventListener("change", e => {
     } else { o.name = t.value; o.manual = true; }
     touch(); return;
   }
-  if (d.card) { C.card[d.card] = d.num !== undefined ? parseNum(t.value) : t.value; touch(); if (d.card === "name" || d.card === "product" || (isOD() && (d.card === "amount" || d.card === "date"))) render(); return; }
+  if (d.card) { C.card[d.card] = d.num !== undefined ? parseNum(t.value) : t.value; t.classList.remove("ph"); touch(); if (d.card === "name" || d.card === "product" || (isOD() && (d.card === "amount" || d.card === "date"))) render(); return; }
   if (d.comp !== undefined) { C.companies[+d.comp][d.f] = t.value; touch(); return; }
   if (d.inact !== undefined) { C.inactive = C.inactive || {}; const k = +d.inact; C.inactive[k] = C.inactive[k] || {}; C.inactive[k][d.pid] = t.checked; touch(); render(); return; }
   if (d.role !== undefined) {
