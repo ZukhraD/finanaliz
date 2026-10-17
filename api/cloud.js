@@ -7,8 +7,10 @@
 // Переменные окружения: KV_REST_API_URL + KV_REST_API_TOKEN (или UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN),
 // INVITE_CODE — код приглашения для регистрации, SESSION_SECRET — необязательно.
 const crypto = require("crypto");
-const URL_ = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL || "";
-const TOK = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN || "";
+// адрес и токен Upstash: KV_…, UPSTASH_REDIS_… или любой свой префикс (…_REST_API_URL / …_REST_API_TOKEN)
+const envEnd = suf => { for (const [k, v] of Object.entries(process.env)) if (k.endsWith(suf) && !/READ_ONLY/.test(k) && v) return v; return ""; };
+const URL_ = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL || envEnd("_REST_API_URL") || envEnd("_REDIS_REST_URL");
+const TOK = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN || envEnd("_REST_API_TOKEN") || envEnd("_REDIS_REST_TOKEN");
 const INVITE = process.env.INVITE_CODE || "";
 const SECRET = process.env.SESSION_SECRET || (TOK ? crypto.createHash("sha256").update("finkz-session|" + TOK).digest("hex") : "");
 const P = "finkz:";
