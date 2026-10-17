@@ -87,7 +87,7 @@ function pageTrust() {
   ensureTrust();
   const k = COMP_TAB > nComp() ? 1 : COMP_TAB, s = trustSummary(k), t = s.t;
   const opt = (id, cur) => `<select class="inp tst ${cur}" data-trust="${id}">${Object.entries(TST).map(([v, l]) => `<option value="${v}"${cur === v ? " selected" : ""}>${l}</option>`).join("")}</select>`;
-  return `<div class="pagehead"><div class="lead"><h1>Благонадёжность</h1><p>Проверка компании по официальным реестрам и сервисам проверки контрагентов. Загрузите отчёт из «Параграфа» (PRG.Tekser) или аналогичного сервиса в PDF, HTML или Excel — сайт найдёт в нём факторы риска и предложит отметки. Отчёт читается в этом браузере и никуда не отправляется. Кнопка «Подтянуть по БИН» сама загружает открытую страницу компании на ba.prg.kz (наружу уходит только БИН) и заполняет регистрационные данные и проверки КГД, госзакупок и Минюста.</p></div>
+  return `<div class="pagehead"><div class="lead"><h1>Благонадёжность</h1><p>Проверка компании по официальным реестрам и сервисам проверки контрагентов. Кнопка «Подтянуть по БИН» сама загружает открытую страницу компании на ba.prg.kz (наружу уходит только БИН) и заполняет регистрационные данные и проверки КГД, госзакупок и Минюста.</p></div>
     <div class="toolbar"><button class="btn" data-binlookup="${k - 1}">Подтянуть по БИН</button><button class="btn ghost" data-act="afmcheck">Сверить с перечнем АФМ</button><button class="btn primary" data-act="trustdlg">Загрузить отчёт</button></div></div>
   ${compTabs()}<div id="probBanner" data-page="trust">${bannerHTML("trust")}</div>
   <section class="panel"><h2>${esc(compName(k))}</h2>

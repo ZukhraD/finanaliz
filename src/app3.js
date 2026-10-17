@@ -30,7 +30,7 @@ function render() {
     </nav>
     <main class="main" id="main">${PAGES[PAGE]()}</main>
   </div><div id="toast" class="toast" role="status"></div>${DIALOG}`;
-  paintSaved(); paintProblemMarks();
+  paintSaved(); paintProblemMarks(); paintNeg();
 }
 function pageProblems(page) { return PROB.filter(p => p.page === page || (page === "cons" && p.page === "elim")); }
 function paintProblemMarks() {
@@ -91,7 +91,7 @@ function renderClients() {
       </div>
       <div class="hside">
         <div class="hgraph"><span class="k">${list.length}</span><span class="l">${list.length === 1 ? "клиент в работе" : "клиентов в базе"}</span>
-          <div class="hsplit"><span><b>${done}</b> утверждено</span><span><b>${list.length - done}</b> в работе</span></div>${list.some(c => c.demo) ? "" : `<button class="hdemo" data-act="demo">Открыть пример заполнения →</button>`}</div>
+          <div class="hsplit"><span><b>${done}</b> утверждено</span><span><b>${list.length - done}</b> в работе</span></div><button class="hdemo" data-act="demo">Открыть пример заполнения →</button></div>
       </div>
     </section>
     <section class="clist">
@@ -193,7 +193,7 @@ function compTabs() {
   return nComp() > 1 ? `<div class="tabs" role="tablist">${C.companies.map((x, i) => `<button role="tab" aria-selected="${COMP_TAB === i + 1}" data-ctab="${i + 1}">К${i + 1} · ${esc(x.name || "без названия")}</button>`).join("")}</div>` : "";
 }
 const FORM_INTRO = {
-  bal: ["Бухгалтерский баланс", "Ввод — голубые ячейки. Пусто — данных нет; 0 — значение действительно нулевое. Непокрытый убыток — со знаком минус. Итоги «по отчётности» нужны для автоматической сверки."],
+  bal: ["Бухгалтерский баланс", "Ввод — голубые ячейки. Итоги «по отчётности» нужны для автоматической сверки."],
   odr: ["Отчёт о прибылях и убытках", "Расходы — положительными числами. Износ, разовые статьи, дивиденды и ФОТ — из расшифровок (в форме их нет)."],
   cf: ["Отчёт о движении денежных средств", "Стандартная форма МФ РК (приложение 3 к приказу №404, прямой метод). Выплаты — положительными числами; итоги разделов, чистые потоки и остаток денег на конец периода считаются сами."],
 };
@@ -474,7 +474,7 @@ document.addEventListener("click", async e => {
   switch (d.act) {
     case "clients": C = null; render(); break;
     case "new": { const c = newClient(); CLIENTS.push(c); C = c; PAGE = "card"; saveAll(true); render(); break; }
-    case "demo": { const c = demoClient(); CLIENTS.push(c); C = c; PAGE = "an"; saveAll(true); render(); break; }
+    case "demo": { let c = CLIENTS.find(x => x.demo); if (!c) { c = demoClient(); CLIENTS.push(c); saveAll(true); } C = c; PAGE = "an"; render(); break; }
     case "export": C.saved = Date.now(); download(fileName(C), JSON.stringify(C, null, 1), "application/json"); saveAll(true); toast("Файл клиента сохранён в «Загрузки»"); break;
     case "import": { const inp = document.createElement("input"); inp.type = "file"; inp.accept = ".json"; inp.onchange = async () => { try {
       const o = JSON.parse(await inp.files[0].text());
@@ -597,7 +597,7 @@ function refreshCalc() {
     const [o, key, pid] = td.dataset.v.split("|"); const v = val(+o, key, pid);
     td.textContent = fmt(v); td.classList.toggle("neg", isNum(v) && v < 0);
   });
-  PROB = problems(); paintProblemMarks();
+  PROB = problems(); paintProblemMarks(); paintNeg();
   const out = $("#fcOut"); if (out) out.innerHTML = fcOutHTML();
   if (typeof fcqRefresh === "function") fcqRefresh();
   const hz = document.querySelector('select[data-fc="horizon"] option[value="0"]'); if (hz) hz.textContent = `По сроку кредита (${fcHorizon()} мес.)`;
@@ -662,3 +662,10 @@ function setPeriod(p, y, q) {
 
 // роли компании (можно несколько): заёмщик и залогодатель, гарант и залогодатель и т.д.
 function compRoles(x) { if (Array.isArray(x.roles) && x.roles.length) return x.roles; return String(x.role || "").split(/\s*,\s*/).filter(Boolean); }
+
+// отрицательные значения — красным (в таблицах и в полях ввода)
+function paintNeg(root = document) {
+  root.querySelectorAll("table td").forEach(td => { if (td.querySelector("input,select")) return; const t = td.textContent.trim(); td.classList.toggle("negv", /^[−-]\s?\d/.test(t)); });
+  root.querySelectorAll("td input, .inp.num").forEach(el => el.classList.toggle("negv", /^\s*[−-]\s?\d/.test(el.value) || /^\s*\(\d/.test(el.value)));
+}
+document.addEventListener("change", e => { if (e.target.matches("input")) setTimeout(() => paintNeg(), 0); });

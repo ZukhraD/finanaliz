@@ -366,4 +366,5 @@ function fcqRefresh() {
   const o = fcq(), sx = el.querySelector(".tablewrap")?.scrollLeft || 0;
   el.innerHTML = o.err ? "" : fcqTable(o);
   const w = el.querySelector(".tablewrap"); if (w) w.scrollLeft = sx;
+  if (typeof paintNeg === "function") paintNeg(el);
 }

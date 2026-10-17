@@ -49,6 +49,8 @@ const STORE = "finkz.clients.v1", STORE_ENC = "finkz.clients.enc.v1";
 // ПИН-код: данные в браузере шифруются (AES-GCM, ключ из ПИН через PBKDF2); ключ живёт только в памяти открытой вкладки
 const LOCK = { on: false, key: null, salt: null };
 let CLIENTS = loadAll();
+function fixDemoAnalyst(list) { for (const c of list || []) if (c.card && c.card.analyst === "Кредитный менеджер (пример)") c.card.analyst = ""; return list; }
+fixDemoAnalyst(CLIENTS);
 function loadAll() {
   try { if (localStorage.getItem(STORE_ENC)) { LOCK.on = true; return []; } return JSON.parse(localStorage.getItem(STORE) || "[]"); } catch (e) { return []; }
 }
@@ -67,7 +69,7 @@ async function encStore() {
 async function unlockPin(pin) {
   const o = JSON.parse(localStorage.getItem(STORE_ENC)), salt = unb64(o.salt), key = await pinKey(pin, salt);
   const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: unb64(o.iv) }, key, unb64(o.ct));   // неверный ПИН → ошибка
-  LOCK.key = key; LOCK.salt = salt; CLIENTS = JSON.parse(new TextDecoder().decode(pt));
+  LOCK.key = key; LOCK.salt = salt; CLIENTS = fixDemoAnalyst(JSON.parse(new TextDecoder().decode(pt)));
 }
 async function setPin(pin) {
   LOCK.salt = crypto.getRandomValues(new Uint8Array(16)); LOCK.key = await pinKey(pin, LOCK.salt); LOCK.on = true;
