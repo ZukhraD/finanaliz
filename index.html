@@ -5921,6 +5921,7 @@ async function cloudDialog(mode = "in") {
     : fld("clL", "Логин", "text", "username", CLOUD.login) + fld("clR", "Код восстановления") + fld("clP", "Новый пароль (не меньше 10 знаков)", "password", "new-password") + fld("clP2", "Повторите пароль", "password", "new-password");
   const body = `${tabs}<p class="hint">${hint}</p><div class="grid2" style="margin-top:8px">${fields}</div><p class="lockmsg" id="clMsg"></p>`;
   let code = "";
+  setTimeout(() => { const el = document.querySelector("#clL"); if (el) el.focus(); }, 30);
   const r = await dialog("Облачная база", body, [{ t: "Отменить", v: null }, { t: { in: "Войти", reg: "Зарегистрироваться", rec: "Сменить пароль и войти" }[mode], primary: true, keep: true, v: async dlg => {
     const g = id => (dlg.querySelector("#" + id) || {}).value || "", msg = dlg.querySelector("#clMsg");
     const f = { login: g("clL").trim(), name: g("clN").trim(), pass: g("clP"), invite: g("clI").trim(), code: g("clR") };
