@@ -583,3 +583,11 @@ input.negv, .inp.negv { color: #D92D20 !important; }
 .phead { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .phead h2 { margin: 0; }
 .rail .foot .copy { display: block !important; margin-top: 12px !important; padding-top: 10px; border-top: 1px solid rgba(255,255,255,.18); }
+.rail .foot .copy { margin-top: 8px !important; padding-top: 6px; }
+.rail .foot button { padding: 1px 0; }
+.steps.aistep { margin-top: 6px; padding-top: 6px; }
+.steps.svc { margin-top: 6px; }
+.rail .brand { margin-bottom: 6px; }
+@media (max-height: 820px) { .steps button { padding-top: 2px !important; padding-bottom: 2px !important; } }
+@media (max-height: 920px) { .steps button { padding-top: 4px !important; padding-bottom: 4px !important; } }
+@media (max-height: 820px) { .steps button { padding-top: 2px !important; padding-bottom: 2px !important; } }
