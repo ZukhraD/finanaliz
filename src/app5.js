@@ -60,6 +60,8 @@ const okedFmt = d => (d.length <= 2 ? d : d.length <= 4 ? d.slice(0, 2) + "." + 
     try { localStorage.setItem(OKED_KZ_KEY, JSON.stringify(OKED_KZ)); localStorage.setItem(OKED_KEY, JSON.stringify(OKED)); } catch (e) { /* до перезагрузки */ }
   }
 })();
+// встроенный классификатор ОКЭД НК РК 03-2019 (рус. и каз.): работает на любом устройстве без загрузки; загруженный вручную — важнее
+{ const B = window.OKED_BUILTIN || {}; for (const k in B) { if (!OKED[k] && B[k][0]) OKED[k] = B[k][0]; if (!OKED_KZ[k] && B[k][1]) OKED_KZ[k] = B[k][1]; } }
 function okedLookup(code) {
   const d = okedDigits(code);
   if (d.length < 2) return null;
