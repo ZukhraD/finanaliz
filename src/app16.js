@@ -205,15 +205,15 @@ function cloudHeaderHTML() {
 }
 const CL_TABS = [["in", "Вход"], ["reg", "Регистрация"], ["rec", "Забыли пароль?"]];
 async function cloudDialog(mode = "in") {
-  const cfg = CLOUD.cfg || await cloudCfg();
-  if (!cfg.configured) { await dialog("Облачная база", `<p>${cfg.offline ? "Файл открыт с компьютера — облачная база работает только на сайте." : "Облачная база ещё не подключена на сервере. Администратору: в Vercel → Storage подключить Upstash Redis и задать переменную INVITE_CODE (код приглашения), затем Redeploy."}</p>`, [{ t: "Понятно", primary: true, v: true }]); return; }
+  const cfg = await cloudCfg();
+  if (!cfg.configured) { await dialog("Облачная база", `<p>${cfg.offline ? "Файл открыт с компьютера — облачная база работает только на сайте." : "Облачная база ещё не подключена на сервере. Администратору: в Vercel → Storage подключить Upstash Redis к проекту, затем Redeploy."}</p>`, [{ t: "Понятно", primary: true, v: true }]); return; }
   const tabs = `<div class="tabs" role="tablist" style="margin-bottom:12px">${CL_TABS.map(([k, t]) => `<button role="tab" aria-selected="${mode === k}" data-cltab="${k}">${t}</button>`).join("")}</div>`;
   const fld = (id, lab, type = "text", ac = "off", val = "") => `<label class="f"><span>${lab}</span><input class="inp" id="${id}" type="${type}" autocomplete="${ac}" value="${esc(val)}"></label>`;
   const hint = { in: "После входа ваши клиенты загрузятся на это устройство, а изменения будут сохраняться на сервере в зашифрованном виде. Другие сотрудники ваших клиентов не видят.",
-    reg: "Код приглашения выдаёт администратор. Пароль шифрует ваши данные и на сервер не отправляется. После регистрации появится код восстановления — запишите его: без него забытый пароль восстановить нельзя.",
+    reg: (cfg.firstUser ? "<b>Вы регистрируетесь первым.</b> Придумайте код приглашения — его вы потом передадите коллегам для регистрации. " : "Код приглашения выдаёт администратор. ") + "Пароль шифрует ваши данные и на сервер не отправляется. После регистрации появится код восстановления — запишите его: без него забытый пароль восстановить нельзя.",
     rec: "Введите код восстановления, который вы записали при регистрации, и придумайте новый пароль. Входы на других устройствах после этого прекратятся." }[mode];
   const fields = mode === "in" ? fld("clL", "Логин", "text", "username", CLOUD.login) + fld("clP", "Пароль", "password", "current-password")
-    : mode === "reg" ? fld("clL", "Логин", "text", "username") + fld("clN", "Имя и фамилия", "text", "name") + fld("clP", "Пароль (не меньше 10 знаков)", "password", "new-password") + fld("clP2", "Повторите пароль", "password", "new-password") + fld("clI", "Код приглашения")
+    : mode === "reg" ? fld("clL", "Логин", "text", "username") + fld("clN", "Имя и фамилия", "text", "name") + fld("clP", "Пароль (не меньше 10 знаков)", "password", "new-password") + fld("clP2", "Повторите пароль", "password", "new-password") + fld("clI", cfg.firstUser ? "Придумайте код приглашения для коллег (не меньше 6 знаков)" : "Код приглашения")
     : fld("clL", "Логин", "text", "username", CLOUD.login) + fld("clR", "Код восстановления") + fld("clP", "Новый пароль (не меньше 10 знаков)", "password", "new-password") + fld("clP2", "Повторите пароль", "password", "new-password");
   const body = `${tabs}<p class="hint">${hint}</p><div class="grid2" style="margin-top:8px">${fields}</div><p class="lockmsg" id="clMsg"></p>`;
   let code = "";

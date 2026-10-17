@@ -5,13 +5,13 @@
 // Защита от подбора: не больше 5 неудачных попыток на логин и 30 на IP за 15 минут.
 // Хранилище — Upstash Redis (Vercel → Storage), доступ по REST.
 // Переменные окружения: KV_REST_API_URL + KV_REST_API_TOKEN (или UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN),
-// INVITE_CODE — код приглашения для регистрации, SESSION_SECRET — необязательно.
+// INVITE_CODE — необязательно (иначе код приглашения задаёт первый сотрудник), SESSION_SECRET — необязательно.
 const crypto = require("crypto");
 // адрес и токен Upstash: KV_…, UPSTASH_REDIS_… или любой свой префикс (…_REST_API_URL / …_REST_API_TOKEN)
 const envEnd = suf => { for (const [k, v] of Object.entries(process.env)) if (k.endsWith(suf) && !/READ_ONLY/.test(k) && v) return v; return ""; };
 const URL_ = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL || envEnd("_REST_API_URL") || envEnd("_REDIS_REST_URL");
 const TOK = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN || envEnd("_REST_API_TOKEN") || envEnd("_REDIS_REST_TOKEN");
-const INVITE = process.env.INVITE_CODE || "";
+const INVITE_ENV = process.env.INVITE_CODE || "";   // если не задан — код приглашения задаёт первый зарегистрированный сотрудник (хранится как хеш)
 const SECRET = process.env.SESSION_SECRET || (TOK ? crypto.createHash("sha256").update("finkz-session|" + TOK).digest("hex") : "");
 const P = "finkz:";
 const TTL_DAYS = 14, WIN = 900, MAX_LOGIN = 5, MAX_IP = 30;
@@ -54,11 +54,13 @@ module.exports = async (req, res) => {
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("X-Content-Type-Options", "nosniff");
   const send = (code, o) => res.status(code).json(o);
-  const configured = !!(URL_ && TOK && INVITE);
+  const configured = !!(URL_ && TOK);
+  const invHash = s => crypto.createHash("sha256").update("finkz-invite|" + String(s || "")).digest("base64");
+  const inviteOk = async s => (INVITE_ENV ? eq(s || "", INVITE_ENV) : eq(invHash(s), (await one("GET", P + "invite")) || "-"));
   try {
-    if (req.method === "GET") return send(200, { ok: true, configured, partSize: PART, mode: "personal" });
+    if (req.method === "GET") return send(200, { ok: true, configured, partSize: PART, mode: "personal", firstUser: configured && !INVITE_ENV && !(await one("GET", P + "invite")) });
     if (req.method !== "POST") return send(405, { ok: false, error: "Только GET/POST" });
-    if (!configured) return send(503, { ok: false, error: "Хранилище не настроено: подключите Upstash Redis в Vercel и задайте INVITE_CODE" });
+    if (!configured) return send(503, { ok: false, error: "Хранилище не настроено: подключите Upstash Redis в Vercel" });
     const b = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
     const a = b.a, ip = ipOf(req);
 
@@ -69,7 +71,12 @@ module.exports = async (req, res) => {
     }
     if (a === "register") {
       if (await blocked("", ip)) return send(429, { ok: false, error: TOO_MANY });
-      if (!eq(b.invite || "", INVITE)) { await fail("", ip); return send(403, { ok: false, error: "Неверный код приглашения" }); }
+      let firstInvite = false;
+      if (!INVITE_ENV && !(await one("GET", P + "invite"))) {   // первый сотрудник задаёт код приглашения для коллег
+        if (String(b.invite || "").length < 6) return send(400, { ok: false, error: "Код приглашения — не меньше 6 знаков" });
+        firstInvite = !!(await one("SET", P + "invite", invHash(b.invite), "NX"));
+      }
+      if (!firstInvite && !(await inviteOk(b.invite))) { await fail("", ip); return send(403, { ok: false, error: "Неверный код приглашения" }); }
       const l = normLogin(b.login); if (!validLogin(l)) return send(400, { ok: false, error: "Логин: 3–40 знаков (буквы, цифры, . _ - @)" });
       if (!b64ok(b.auth, 100) || !b64ok(b.salt, 40) || !wrapOk(b.wrap) || !b64ok(b.rauth, 100) || !b64ok(b.rsalt, 40) || !wrapOk(b.rwrap)) return send(400, { ok: false, error: "Неверные данные" });
       const hs = crypto.randomBytes(16).toString("base64"), rhs = crypto.randomBytes(16).toString("base64");
