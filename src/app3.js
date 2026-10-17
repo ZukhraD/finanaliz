@@ -87,19 +87,16 @@ function renderClients() {
     <section class="hero">
       <div class="hblue">
         <h1>Финансовый анализ компаний и групп Казахстана</h1>
-        <p>Отчётность из Excel, декларации, выписки и кредитные отчёты из PDF; чистые кредитовые обороты, сверки, коэффициенты, залог, прогноз денежного потока до 84 месяцев, проблемы с подсказками и заключение в Word. Все суммы — в тыс. тг.</p>
         <div class="hbtn"><button class="btn lime" data-act="new">Новый клиент</button><button class="btn wline" data-act="import">Открыть файл клиента</button>${list.length ? `<button class="btn wline" data-act="backup">Сохранить всех в файл</button>` : ""}</div>
       </div>
       <div class="hside">
         <div class="hgraph"><span class="k">${list.length}</span><span class="l">${list.length === 1 ? "клиент в работе" : "клиентов в базе"}</span>
           <div class="hsplit"><span><b>${done}</b> утверждено</span><span><b>${list.length - done}</b> в работе</span></div></div>
-        <div class="hplat"><b>${last ? "Последний клиент" : "Посмотреть, как это работает"}</b><span>${last ? esc(last.card.name) + " · " + esc(when(last.updated)) : "Вымышленная группа из трёх компаний с готовыми данными за три года"}</span>
-          ${last ? `<button class="btn primary" data-open="${last.id}">Продолжить</button>` : `<button class="btn primary" data-act="demo">Открыть пример</button>`}</div>
       </div>
     </section>
     <section class="clist">
       <div class="chead"><h2>Клиенты</h2>${list.length > 3 ? `<input class="inp search" id="q" placeholder="Поиск по названию, БИН или ОКЭД" aria-label="Поиск клиента">` : ""}${list.length && !list.some(c => c.demo) ? `<button class="btn ghost" data-act="demo">Открыть пример «Тест-Агро»</button>` : ""}</div>
-      ${list.length ? `<ul class="crows">${rows}</ul>` : `<div class="empty"><h2>Пока нет ни одного клиента</h2><p class="muted">Создайте клиента или откройте пример, чтобы посмотреть, как всё устроено.</p><button class="btn primary" data-act="new">Новый клиент</button></div>`}
+      ${list.length ? `<ul class="crows">${rows}</ul>` : `<div class="empty"><h2>Пока нет ни одного клиента</h2><p class="muted">Создайте клиента или откройте пример, чтобы посмотреть, как всё устроено.</p><div class="hbtn" style="justify-content:center"><button class="btn primary" data-act="new">Новый клиент</button><button class="btn ghost" data-act="demo">Открыть пример «Тест-Агро»</button></div></div>`}
     </section>
     <footer class="hfoot"><span>© 2026 Создан ОФКК Костанай</span><span>Резервная копия клиента — кнопка «Файл»; открыть на другом компьютере — «Открыть файл клиента».</span></footer>
   </div><div id="toast" class="toast" role="status"></div>${DIALOG}`;
@@ -110,7 +107,7 @@ function renderClients() {
 /* ---------- карточка */
 function pageCard() {
   const c = C.card;
-  const f = (key, lab, type = "text") => `<label class="f"><span>${lab}</span><input class="inp" data-card="${key}" type="${type}" value="${esc(c[key] ?? "")}"></label>`;
+  const f = (key, lab, type = "text", ph = "") => `<label class="f"><span>${lab}</span><input class="inp" data-card="${key}" type="${type}" value="${esc(c[key] ?? "")}"${ph ? ` placeholder="${esc(ph)}"` : ""}></label>`;
   const sel = (key, lab, list) => `<label class="f"><span>${lab}</span><select class="inp" data-card="${key}">${opts(list, c[key])}</select></label>`;
   const comps = C.companies.map((x, i) => `<tr><td class="lab">К${i + 1}</td>
       <td><input class="inp" data-comp="${i}" data-f="${LANG === "kz" ? "nameKz" : "name"}" value="${esc(LANG === "kz" ? (x.nameKz || x.name) : x.name)}" placeholder="Название"></td>
@@ -132,9 +129,9 @@ function pageCard() {
   return `<div class="pagehead"><div class="lead"><h1>Карточка клиента</h1><p>Клиент, состав группы и отчётные периоды. Периоды идут от старого к новому; у всех компаний группы они одинаковые.</p></div></div>
   <section class="panel"><h2>Клиент и запрос</h2><div class="grid2">
     ${f("name", "Клиент / группа")}${f("bin", "БИН основной компании")}${f("activity", "Описание деятельности (свободно)")}${f("region", "Регион")}
-    ${f("analyst", "Кредитный менеджер")}${f("date", "Дата анализа", "date")}${sel("purpose", "Цель финансирования", S.lists.fpurpose)}${sel("product", "Продукт", S.lists.product)}
+    ${f("analyst", "Кредитный менеджер", "text", "ФИО")}${f("date", "Дата анализа", "date")}${sel("purpose", "Цель финансирования", S.lists.fpurpose)}${sel("product", "Продукт", S.lists.product)}
     <label class="f"><span>Запрашиваемая сумма, тыс. тг</span><input class="inp" data-card="amount" data-num value="${esc(fmt(c.amount))}"></label>
-    <label class="f"><span>Допуск сверок, тыс. тг</span><input class="inp" data-card="tol" data-num value="${esc(fmt(c.tol))}"></label>
+    <label class="f" title="Допустимая разница при автоматических сверках (баланс, ОПиУ, декларации, банк, кредиты): расхождения меньше этой суммы считаются округлением и не попадают в «Проблемы»."><span>Допуск расхождений, тыс. тг <span class="qhint">?</span></span><input class="inp" data-card="tol" data-num value="${esc(fmt(c.tol))}"></label>
   </div></section>
   ${isOD() ? odCardPanel() : ""}
   ${okedPanel()}
@@ -373,7 +370,7 @@ function pageMap() {
   <section class="panel"><h2>Справочник ОКЭД</h2><p class="hint">${Object.keys(OKED).length ? `Загружен: ${nf0.format(Object.keys(OKED).length)} кодов. Хранится в этом браузере и действует для всех клиентов.${okedKz() ? " <b>Сейчас наименования на казахском — загрузите файл заново: сайт возьмёт колонку на русском.</b>" : ""}` : "Не загружен — по коду подставляется только название раздела (2 знака)."} Загрузите классификатор ОКЭД в Excel (.xlsx или .xls), например с сайта Бюро национальной статистики: колонки кода и наименования найдутся сами.</p>
     <button class="btn" data-act="okedfile">${Object.keys(OKED).length ? "Обновить справочник ОКЭД" : "Загрузить справочник ОКЭД"}</button></section>
   ${afmPanel()}
-  <div class="tablewrap"><table class="data"><thead><tr><th class="lab">Строка анализатора</th><th style="text-align:left">Полная форма</th><th style="text-align:left">Форма МСБ</th><th style="text-align:left">НСФО (малый бизнес)</th><th style="text-align:left">Свой вариант</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  <div class="tablewrap"><table class="data mapt"><thead><tr><th class="lab">Строка анализатора</th><th style="text-align:left">Полная форма</th><th style="text-align:left">Форма МСБ</th><th style="text-align:left">НСФО (малый бизнес)</th><th style="text-align:left">Свой вариант</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 function pageLog() {
   const rows = C.log.map(r => `<tr><td class="lab" style="min-width:150px">${dDateTime(r.t)}</td><td style="text-align:left">${esc(r.file)}${r.sheet ? " / " + esc(r.sheet) : ""}</td><td style="text-align:left">${esc([r.comp, r.per].filter(Boolean).join(", "))}</td>

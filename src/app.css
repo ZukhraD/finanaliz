@@ -519,3 +519,36 @@ table.fcq tr.sub td.lab { padding-left: 28px; }
 .rail .client { padding-bottom: 8px !important; }
 @media (max-height: 940px) { .rail .copy { display: none; } }
 .qhint { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; background: #e8edff; color: #023dff; font-size: 11px; font-weight: 700; cursor: help; vertical-align: 1px; }
+
+/* главная без серой карточки */
+.hside { grid-template-rows: 1fr; }
+.hgraph { display: flex; flex-direction: column; justify-content: center; }
+.hblue { display: flex; flex-direction: column; justify-content: space-between; gap: 28px; min-height: 240px; }
+.hblue h1 { max-width: 18ch; }
+.hbtn { display: flex; flex-wrap: wrap; gap: 10px; }
+/* полоса прокрутки не закрывает последний столбец */
+.tablewrap { scrollbar-gutter: stable; }
+.tablewrap table.data tr > *:last-child { padding-right: 22px; }
+/* реестр кредитов в прогнозе */
+table.loans { table-layout: auto; }
+table.loans td.cell select.inp { min-width: 128px; width: 100%; }
+table.loans td.cell input.inp { min-width: 92px; }
+table.loans td.cell:first-child input.inp { min-width: 200px; }
+table.loans td, table.loans th { padding-left: 4px; padding-right: 4px; }
+/* настройка загрузки: все столбцы в ширину, длинные коды переносятся */
+table.mapt { table-layout: fixed; width: 100%; }
+table.mapt th:nth-child(1), table.mapt td:nth-child(1) { width: 26%; }
+table.mapt td, table.mapt th { white-space: normal !important; overflow-wrap: anywhere; word-break: break-word; vertical-align: top; }
+table.mapt td input.inp { width: 100%; min-width: 0; }
+table.loans td.cell select.inp { min-width: 108px !important; }
+table.loans td.cell input.inp { min-width: 70px !important; }
+table.loans td.cell:first-child input.inp { min-width: 150px !important; }
+table.loans td.cell:nth-child(8) select.inp { min-width: 150px !important; }
+table.loans td.cell .inp { font-size: 13px; padding-left: 6px; padding-right: 4px; }
+table.loans td.cell:nth-child(2) select.inp { min-width: 116px !important; }
+table.loans td.cell:nth-child(3) select.inp { min-width: 84px !important; }
+table.loans td.cell:nth-child(8) select.inp { min-width: 132px !important; }
+table.loans td.cell:first-child input.inp { min-width: 130px !important; }
+table.loans td.cell input.inp { min-width: 58px !important; }
+table.loans th { white-space: normal; font-size: 12.5px; }
+table.loans td.cell:nth-child(8) select.inp { min-width: 162px !important; } table.loans th:nth-child(2), table.loans th:nth-child(3), table.loans th:nth-child(8) { text-align: left; padding-left: 8px; }

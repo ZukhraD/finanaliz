@@ -127,7 +127,7 @@ function newClient(name) {
 }
 function demoClient() {
   const d = S.demo, c = newClient(d.name);
-  c.card.activity = d.activity; c.card.oked = [{ code: "46.21.0", name: "" }, { code: "10.61.0", name: "" }, { code: "52.10.0", name: "" }]; c.card.analyst = "Кредитный менеджер (пример)"; c.card.amount = 300000;
+  c.card.activity = d.activity; c.card.oked = [{ code: "46.21.0", name: "" }, { code: "10.61.0", name: "" }, { code: "52.10.0", name: "" }]; c.card.analyst = ""; c.card.amount = 300000;
   c.companies = d.companies.map(x => ({ ...x }));
   c.periods = d.periods.map(p => ({ ...p }));
   c.data = JSON.parse(JSON.stringify(d.data));
