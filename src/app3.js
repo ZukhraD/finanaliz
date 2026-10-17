@@ -25,7 +25,7 @@ function render() {
       <div class="client"><b>${esc(C.card.name)}</b><span class="small">${nComp()} комп. · ${C.periods.length} пер.</span></div>
       <ol class="steps">${steps.map(([id, t]) => `<li class="num"><button data-page="${id}" ${PAGE === id ? 'aria-current="page"' : ""}>${t}<span class="pdot" data-pdot="${id}"></span></button></li>`).join("")}</ol>
       <ul class="steps"><li><button data-page="map" ${PAGE === "map" ? 'aria-current="page"' : ""}>Настройка загрузки</button></li><li><button data-page="norms" ${PAGE === "norms" ? 'aria-current="page"' : ""}>Нормативы</button></li><li><button data-page="log" ${PAGE === "log" ? 'aria-current="page"' : ""}>Журнал</button></li></ul>
-      <div class="foot"><button data-act="export">Сохранить файл клиента</button><span id="saved" class="saved"></span><p class="copy">© 2026 Создан ОФКК Костанай</p></div>
+      <div class="foot"><button data-act="export">Сохранить файл клиента</button><span id="saved" class="saved"></span>${typeof cloudOn === "function" && cloudOn() ? `<span class="saved" data-cloudst>${esc(cloudStatus())}</span>` : ""}<p class="copy">© 2026 Создан ОФКК Костанай</p></div>
     </nav>
     <main class="main" id="main">${PAGES[PAGE]()}</main>
   </div><div id="toast" class="toast" role="status"></div>${DIALOG}`;
@@ -79,8 +79,8 @@ function renderClients() {
       <div class="cstat">${stChip(...stOf(c))}</div>
       <div class="cact"><button class="btn primary" data-open="${c.id}">Открыть</button><button class="btn ghost" data-exp="${c.id}" title="Сохранить файл клиента">Файл</button><button class="btn ghost danger" data-del="${c.id}">Удалить</button></div></li>`).join("");
   document.body.innerHTML = `<div class="home">
-    <header class="hbar"><div class="mark" aria-hidden="true"><span></span></div><b>Финансовый анализ</b><span class="hnote">работает без интернета · данные остаются на этом компьютере${LOCK.on ? " · защищено ПИН-кодом" : ""}</span>
-      <span class="hsec">${langSwitch()}${cryptoOk() ? (LOCK.on ? `<button class="btn ghost" data-act="lock">Заблокировать</button><button class="btn ghost" data-act="pinset">Сменить ПИН</button><button class="btn ghost" data-act="pinoff">Снять ПИН</button>` : `<button class="btn ghost" data-act="pinset">Защитить ПИН-кодом</button>`) : ""}</span></header>
+    <header class="hbar"><div class="mark" aria-hidden="true"><span></span></div><b>Финансовый анализ</b><span class="hnote">${typeof cloudOn === "function" && cloudOn() ? "общая база отдела · данные зашифрованы и доступны с любого устройства" : "работает без интернета · данные остаются на этом компьютере"}${LOCK.on ? " · защищено ПИН-кодом" : ""}</span>
+      <span class="hsec">${langSwitch()}${typeof cloudHeaderHTML === "function" ? cloudHeaderHTML() : ""}${cryptoOk() ? (LOCK.on ? `<button class="btn ghost" data-act="lock">Заблокировать</button><button class="btn ghost" data-act="pinset">Сменить ПИН</button><button class="btn ghost" data-act="pinoff">Снять ПИН</button>` : `<button class="btn ghost" data-act="pinset">Защитить ПИН-кодом</button>`) : ""}</span></header>
     ${(() => { const n = list.filter(c => !c.demo && (!c.saved || c.saved < c.updated)).length; return n ? `<div class="hwarn"><b>${n === 1 ? "1 клиент изменён" : n + " клиентов изменены"} после последнего сохранения в файл.</b> Данные хранятся только в этом браузере — если очистить его, они пропадут. <button class="btn primary" data-act="backup">Сохранить всех клиентов в файл</button></div>` : ""; })()}
     <section class="hero">
       <div class="hblue">
@@ -400,7 +400,7 @@ function dialog(title, body, buttons) {
   return new Promise(res => {
     const d = $("#dlg"); $("#dlgT").textContent = title; $("#dlgB").innerHTML = body;
     $("#dlgF").innerHTML = buttons.map((b, i) => `<button class="btn ${b.primary ? "primary" : ""}" data-i="${i}">${esc(b.t)}</button>`).join("");
-    $("#dlgF").onclick = e => { const i = e.target.dataset.i; if (i === undefined) return; const v = buttons[+i].v; const out = typeof v === "function" ? v(d) : v; d.close(); res(out); };
+    $("#dlgF").onclick = async e => { const i = e.target.dataset.i; if (i === undefined) return; const bt = buttons[+i], v = bt.v; let out = typeof v === "function" ? v(d) : v; if (bt.keep) { e.target.disabled = true; out = await out; e.target.disabled = false; if (!out) return; } d.close(); res(out); };
     d.onclose = () => { if (!d.open) res(undefined); };   // событие закрытия предыдущего окна приходит позже — его пропускаем
     d.showModal();
   });

@@ -461,3 +461,6 @@ table.fcq tr.sub td.lab { padding-left: 28px; }
 .aiprev h3 { margin: 0 0 6px; } .aiprev h4 { margin: 14px 0 6px; color: #023dff; }
 .aians { margin-top: 12px; border-left: 3px solid #023dff; padding: 4px 14px; }
 .aians h4 { margin: 12px 0 4px; } .aians ul { margin: 4px 0 8px 18px; }
+/* общая база */
+.cloudchip { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; padding: 4px 10px; border-radius: 999px; background: #eef2ff; color: #023dff; }
+.cloudchip .small.bad, [data-cloudst].bad { color: #c81e1e; }
