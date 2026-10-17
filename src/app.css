@@ -582,3 +582,4 @@ td.negv, .neg, td .negv { color: #D92D20 !important; }
 input.negv, .inp.negv { color: #D92D20 !important; }
 .phead { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .phead h2 { margin: 0; }
+.rail .foot .copy { display: block !important; margin-top: 12px !important; padding-top: 10px; border-top: 1px solid rgba(255,255,255,.18); }
