@@ -1,38 +1,52 @@
-// Общая база отдела: учётные записи сотрудников и зашифрованные данные клиентов.
-// Сервер НЕ видит данных клиентов: браузер шифрует их ключом отдела (AES-GCM), ключ выводится из кодового слова отдела,
-// которое на сервер не передаётся. Пароль сотрудника тоже не передаётся — только производный «ключ входа» (PBKDF2 в браузере),
-// который здесь ещё раз хешируется (scrypt). Хранилище — Upstash Redis (Vercel → Storage), доступ по REST.
+// Личная облачная база сотрудника: вход с любого устройства, у каждого — только свои клиенты.
+// Сервер НЕ видит данных клиентов: браузер шифрует их личным ключом сотрудника (AES-GCM 256). Ключ случайный,
+// на сервере хранится только «завёрнутым»: паролем и кодом восстановления (оба на сервер не передаются —
+// только производные «ключи входа», которые здесь ещё раз хешируются scrypt).
+// Защита от подбора: не больше 5 неудачных попыток на логин и 30 на IP за 15 минут.
+// Хранилище — Upstash Redis (Vercel → Storage), доступ по REST.
 // Переменные окружения: KV_REST_API_URL + KV_REST_API_TOKEN (или UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN),
-// INVITE_CODE — код приглашения для регистрации, SESSION_SECRET — необязательно (иначе выводится из токена хранилища).
+// INVITE_CODE — код приглашения для регистрации, SESSION_SECRET — необязательно.
 const crypto = require("crypto");
 const URL_ = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL || "";
 const TOK = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN || "";
 const INVITE = process.env.INVITE_CODE || "";
 const SECRET = process.env.SESSION_SECRET || (TOK ? crypto.createHash("sha256").update("finkz-session|" + TOK).digest("hex") : "");
-const PFX = "finkz:";
-const TTL_DAYS = 30;
+const P = "finkz:";
+const TTL_DAYS = 14, WIN = 900, MAX_LOGIN = 5, MAX_IP = 30;
+const PART = 3000000;   // длина одной части (base64), чтобы уложиться в лимит запроса Vercel 4,5 МБ
 
-async function redis(cmds) {   // cmds: [[...], ...] → результаты
+async function redis(cmds) {
   const r = await fetch(URL_.replace(/\/$/, "") + "/pipeline", { method: "POST", headers: { Authorization: "Bearer " + TOK, "Content-Type": "application/json" }, body: JSON.stringify(cmds) });
   if (!r.ok) throw new Error("хранилище ответило " + r.status);
-  const j = await r.json();
-  return j.map(x => { if (x.error) throw new Error(x.error); return x.result; });
+  return (await r.json()).map(x => { if (x.error) throw new Error(x.error); return x.result; });
 }
 const one = async (...c) => (await redis([c]))[0];
 const hmac = s => crypto.createHmac("sha256", SECRET).update(s).digest("base64url");
 const eq = (a, b) => { const x = Buffer.from(String(a)), y = Buffer.from(String(b)); return x.length === y.length && crypto.timingSafeEqual(x, y); };
 const normLogin = s => String(s || "").trim().toLowerCase();
 const validLogin = s => /^[a-z0-9а-яё._@-]{3,40}$/i.test(s);
-function token(login) { const exp = Date.now() + TTL_DAYS * 864e5, p = Buffer.from(JSON.stringify({ l: login, e: exp })).toString("base64url"); return p + "." + hmac(p); }
-function who(req) {
+const b64ok = (s, max) => typeof s === "string" && s.length <= max && /^[A-Za-z0-9+/=]*$/.test(s);
+const wrapOk = w => w && b64ok(w.iv, 40) && b64ok(w.ct, 200);
+const idOk = s => typeof s === "string" && /^[a-z0-9]{4,40}$/i.test(s);
+const scryptHash = (key, salt) => new Promise((ok, no) => crypto.scrypt(Buffer.from(key, "base64"), Buffer.from(salt, "base64"), 32, { N: 16384, r: 8, p: 1 }, (e, d) => (e ? no(e) : ok(d.toString("base64")))));
+const fakeSalt = (l, k) => crypto.createHmac("sha256", SECRET).update(k + "|" + l).digest().subarray(0, 16).toString("base64");
+function token(login, ver) { const p = Buffer.from(JSON.stringify({ l: login, v: ver || 0, e: Date.now() + TTL_DAYS * 864e5 })).toString("base64url"); return p + "." + hmac(p); }
+function readToken(req) {
   const t = String(req.headers["x-finkz-token"] || ""), [p, s] = t.split(".");
   if (!p || !s || !eq(hmac(p), s)) return null;
-  try { const o = JSON.parse(Buffer.from(p, "base64url").toString()); return o.e > Date.now() ? o.l : null; } catch (e) { return null; }
+  try { const o = JSON.parse(Buffer.from(p, "base64url").toString()); return o.e > Date.now() ? o : null; } catch (e) { return null; }
 }
-const scryptHash = (key, salt) => new Promise((ok, no) => crypto.scrypt(Buffer.from(key, "base64"), Buffer.from(salt, "base64"), 32, { N: 16384, r: 8, p: 1 }, (e, d) => (e ? no(e) : ok(d.toString("base64")))));
-const b64ok = (s, max) => typeof s === "string" && s.length <= max && /^[A-Za-z0-9+/=]*$/.test(s);
-const idOk = s => typeof s === "string" && /^[a-z0-9]{4,40}$/i.test(s);
-const PART = 3000000;   // длина одной части (base64), чтобы уложиться в лимит запроса Vercel 4,5 МБ
+const ipOf = req => String(req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "?").split(",")[0].trim();
+async function blocked(login, ip) {
+  const [a, b] = await redis([["GET", P + "fail:l:" + login], ["GET", P + "fail:ip:" + ip]]);
+  return (+a || 0) >= MAX_LOGIN || (+b || 0) >= MAX_IP;
+}
+async function fail(login, ip) {
+  const c = []; if (login) c.push(["INCR", P + "fail:l:" + login], ["EXPIRE", P + "fail:l:" + login, WIN]);
+  c.push(["INCR", P + "fail:ip:" + ip], ["EXPIRE", P + "fail:ip:" + ip, WIN]); await redis(c);
+}
+const TOO_MANY = "Слишком много неудачных попыток. Попробуйте через 15 минут.";
+const userKey = l => P + "user:" + l, metaKey = l => P + "u:" + l + ":meta", partKey = (l, id, i) => P + "u:" + l + ":c:" + id + ":" + i;
 
 module.exports = async (req, res) => {
   res.setHeader("Cache-Control", "no-store");
@@ -40,94 +54,92 @@ module.exports = async (req, res) => {
   const send = (code, o) => res.status(code).json(o);
   const configured = !!(URL_ && TOK && INVITE);
   try {
-    if (req.method === "GET") {
-      const dept = configured ? await one("GET", PFX + "dept") : null;
-      return send(200, { ok: true, configured, deptInit: !!dept, partSize: PART });
-    }
+    if (req.method === "GET") return send(200, { ok: true, configured, partSize: PART, mode: "personal" });
     if (req.method !== "POST") return send(405, { ok: false, error: "Только GET/POST" });
     if (!configured) return send(503, { ok: false, error: "Хранилище не настроено: подключите Upstash Redis в Vercel и задайте INVITE_CODE" });
     const b = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
-    const a = b.a;
+    const a = b.a, ip = ipOf(req);
 
-    // соль для вывода ключей конкретного сотрудника (для несуществующего логина — правдоподобная поддельная)
-    if (a === "salt") {
+    if (a === "salt" || a === "rsalt") {   // соль пароля / кода восстановления (для чужого логина — поддельная)
       const l = normLogin(b.login); if (!validLogin(l)) return send(400, { ok: false, error: "Логин: 3–40 знаков (буквы, цифры, . _ - @)" });
-      const u = await one("GET", PFX + "user:" + l);
-      return send(200, { ok: true, salt: u ? JSON.parse(u).salt : crypto.createHmac("sha256", SECRET).update("fake|" + l).digest().subarray(0, 16).toString("base64") });
-    }
-    // параметры ключа отдела — только по коду приглашения
-    if (a === "dept") {
-      if (!eq(b.invite || "", INVITE)) return send(403, { ok: false, error: "Неверный код приглашения" });
-      const d = await one("GET", PFX + "dept");
-      return send(200, { ok: true, dept: d ? JSON.parse(d) : null });
+      const u = await one("GET", userKey(l)), r = u ? JSON.parse(u) : null;
+      return send(200, { ok: true, salt: r ? (a === "salt" ? r.salt : r.rsalt) : fakeSalt(l, a) });
     }
     if (a === "register") {
-      if (!eq(b.invite || "", INVITE)) return send(403, { ok: false, error: "Неверный код приглашения" });
+      if (await blocked("", ip)) return send(429, { ok: false, error: TOO_MANY });
+      if (!eq(b.invite || "", INVITE)) { await fail("", ip); return send(403, { ok: false, error: "Неверный код приглашения" }); }
       const l = normLogin(b.login); if (!validLogin(l)) return send(400, { ok: false, error: "Логин: 3–40 знаков (буквы, цифры, . _ - @)" });
-      if (!b64ok(b.auth, 100) || !b64ok(b.salt, 40) || !b.wrap || !b64ok(b.wrap.iv, 40) || !b64ok(b.wrap.ct, 200)) return send(400, { ok: false, error: "Неверные данные" });
-      const name = String(b.name || "").slice(0, 80);
-      if (b.deptInit) {
-        const di = b.deptInit; if (!b64ok(di.salt, 40) || !di.check || !b64ok(di.check.iv, 40) || !b64ok(di.check.ct, 200)) return send(400, { ok: false, error: "Неверные данные" });
-        const set = await one("SET", PFX + "dept", JSON.stringify({ salt: di.salt, check: di.check, t: Date.now() }), "NX");
-        if (!set) return send(409, { ok: false, error: "Кодовое слово отдела уже задано — обновите страницу и зарегистрируйтесь заново" });
-      } else if (!(await one("GET", PFX + "dept"))) return send(409, { ok: false, error: "Кодовое слово отдела ещё не задано" });
-      const hs = crypto.randomBytes(16).toString("base64");
-      const rec = { login: l, name, salt: b.salt, hs, h: await scryptHash(b.auth, hs), wrap: b.wrap, t: Date.now() };
-      const ok = await one("SET", PFX + "user:" + l, JSON.stringify(rec), "NX");
-      if (!ok) return send(409, { ok: false, error: "Такой логин уже занят" });
-      await one("SADD", PFX + "users", l);
-      return send(200, { ok: true, token: token(l), wrap: rec.wrap, name, dept: JSON.parse(await one("GET", PFX + "dept")) });
+      if (!b64ok(b.auth, 100) || !b64ok(b.salt, 40) || !wrapOk(b.wrap) || !b64ok(b.rauth, 100) || !b64ok(b.rsalt, 40) || !wrapOk(b.rwrap)) return send(400, { ok: false, error: "Неверные данные" });
+      const hs = crypto.randomBytes(16).toString("base64"), rhs = crypto.randomBytes(16).toString("base64");
+      const rec = { login: l, name: String(b.name || "").slice(0, 80), salt: b.salt, hs, h: await scryptHash(b.auth, hs), wrap: b.wrap,
+        rsalt: b.rsalt, rhs, rh: await scryptHash(b.rauth, rhs), rwrap: b.rwrap, ver: 1, t: Date.now() };
+      if (!(await one("SET", userKey(l), JSON.stringify(rec), "NX"))) return send(409, { ok: false, error: "Такой логин уже занят" });
+      await one("SADD", P + "users", l);
+      return send(200, { ok: true, token: token(l, rec.ver), wrap: rec.wrap, name: rec.name });
     }
-    if (a === "login") {
-      const l = normLogin(b.login), u = validLogin(l) ? await one("GET", PFX + "user:" + l) : null;
-      if (!u || !b64ok(b.auth, 100)) return send(403, { ok: false, error: "Неверный логин или пароль" });
-      const r = JSON.parse(u);
-      if (!eq(await scryptHash(b.auth, r.hs), r.h)) return send(403, { ok: false, error: "Неверный логин или пароль" });
-      return send(200, { ok: true, token: token(l), wrap: r.wrap, name: r.name || "", dept: JSON.parse(await one("GET", PFX + "dept")) });
+    if (a === "login" || a === "recover") {   // recover: по коду восстановления — выдаёт ключ, завёрнутый кодом, и (с новым паролем) меняет пароль
+      const l = normLogin(b.login);
+      if (!validLogin(l)) return send(403, { ok: false, error: "Неверный логин или пароль" });
+      if (await blocked(l, ip)) return send(429, { ok: false, error: TOO_MANY });
+      const u = await one("GET", userKey(l)), r = u ? JSON.parse(u) : null;
+      const good = r && (a === "login" ? b64ok(b.auth, 100) && eq(await scryptHash(b.auth, r.hs), r.h) : b64ok(b.rauth, 100) && eq(await scryptHash(b.rauth, r.rhs), r.rh));
+      if (!good) { await fail(l, ip); return send(403, { ok: false, error: a === "login" ? "Неверный логин или пароль" : "Неверный логин или код восстановления" }); }
+      await one("DEL", P + "fail:l:" + l);
+      if (a === "login") return send(200, { ok: true, token: token(l, r.ver), wrap: r.wrap, name: r.name || "" });
+      if (!b.auth) return send(200, { ok: true, rwrap: r.rwrap });
+      if (!b64ok(b.auth, 100) || !b64ok(b.salt, 40) || !wrapOk(b.wrap)) return send(400, { ok: false, error: "Неверные данные" });
+      r.hs = crypto.randomBytes(16).toString("base64"); r.h = await scryptHash(b.auth, r.hs); r.salt = b.salt; r.wrap = b.wrap; r.ver = (r.ver || 1) + 1;
+      await one("SET", userKey(l), JSON.stringify(r));
+      return send(200, { ok: true, token: token(l, r.ver), name: r.name || "" });
     }
 
-    // дальше — только с действующим входом
-    const me = who(req); if (!me) return send(401, { ok: false, error: "Войдите заново" });
-    if (a === "passwd") {
-      const u = JSON.parse(await one("GET", PFX + "user:" + me));
-      if (!eq(await scryptHash(b.authOld || "", u.hs), u.h)) return send(403, { ok: false, error: "Неверный текущий пароль" });
-      if (!b64ok(b.auth, 100) || !b64ok(b.salt, 40) || !b.wrap || !b64ok(b.wrap.iv, 40) || !b64ok(b.wrap.ct, 200)) return send(400, { ok: false, error: "Неверные данные" });
-      u.hs = crypto.randomBytes(16).toString("base64"); u.h = await scryptHash(b.auth, u.hs); u.salt = b.salt; u.wrap = b.wrap;
-      await one("SET", PFX + "user:" + me, JSON.stringify(u));
-      return send(200, { ok: true, token: token(me) });
+    // дальше — только с действующим входом (после смены пароля старые входы на других устройствах прекращаются)
+    const tk = readToken(req); if (!tk) return send(401, { ok: false, error: "Войдите заново" });
+    const me = tk.l, uRaw = await one("GET", userKey(me));
+    if (!uRaw) return send(401, { ok: false, error: "Учётная запись удалена" });
+    const U = JSON.parse(uRaw); if ((U.ver || 1) !== (tk.v || 1)) return send(401, { ok: false, error: "Пароль был изменён — войдите заново" });
+
+    if (a === "passwd" || a === "deluser") {
+      if (await blocked(me, ip)) return send(429, { ok: false, error: TOO_MANY });
+      if (!b64ok(b.authOld || "", 100) || !eq(await scryptHash(b.authOld, U.hs), U.h)) { await fail(me, ip); return send(403, { ok: false, error: "Неверный текущий пароль" }); }
+      if (a === "deluser") {
+        const h = (await one("HGETALL", metaKey(me))) || [], cmds = [];
+        for (let i = 0; i < h.length; i += 2) { const m = JSON.parse(h[i + 1]); for (let p = 0; p < (m.n || 1); p++) cmds.push(["DEL", partKey(me, h[i], p)]); }
+        cmds.push(["DEL", metaKey(me)], ["DEL", userKey(me)], ["SREM", P + "users", me]);
+        await redis(cmds); return send(200, { ok: true });
+      }
+      if (!b64ok(b.auth, 100) || !b64ok(b.salt, 40) || !wrapOk(b.wrap)) return send(400, { ok: false, error: "Неверные данные" });
+      U.hs = crypto.randomBytes(16).toString("base64"); U.h = await scryptHash(b.auth, U.hs); U.salt = b.salt; U.wrap = b.wrap; U.ver = (U.ver || 1) + 1;
+      await one("SET", userKey(me), JSON.stringify(U));
+      return send(200, { ok: true, token: token(me, U.ver) });
     }
     if (a === "list") {
-      const h = (await one("HGETALL", PFX + "meta")) || [];
-      const meta = {}; for (let i = 0; i < h.length; i += 2) meta[h[i]] = JSON.parse(h[i + 1]);
-      const users = await one("SMEMBERS", PFX + "users");
-      return send(200, { ok: true, me, meta, users: (users || []).length });
+      const h = (await one("HGETALL", metaKey(me))) || [], meta = {};
+      for (let i = 0; i < h.length; i += 2) meta[h[i]] = JSON.parse(h[i + 1]);
+      return send(200, { ok: true, me, meta });
     }
     if (a === "get") {
       if (!idOk(b.id)) return send(400, { ok: false, error: "Неверный id" });
-      const p = Math.max(0, b.part | 0);
-      const d = await one("GET", PFX + "c:" + b.id + ":" + p);
-      return send(200, { ok: true, data: d });
+      return send(200, { ok: true, data: await one("GET", partKey(me, b.id, Math.max(0, b.part | 0))) });
     }
-    if (a === "put") {   // части отправляются по порядку; метаданные обновляются после последней
+    if (a === "put") {
       if (!idOk(b.id) || !b64ok(b.data, PART + 100)) return send(400, { ok: false, error: "Неверные данные" });
       const p = b.part | 0, n = b.n | 0, u = +b.u || Date.now();
       if (p < 0 || n < 1 || n > 40 || p >= n) return send(400, { ok: false, error: "Неверные части" });
-      const cmds = [["SET", PFX + "c:" + b.id + ":" + p, b.data]];
+      const cmds = [["SET", partKey(me, b.id, p), b.data]];
       if (p === n - 1) {
-        const old = await one("HGET", PFX + "meta", b.id), on = old ? JSON.parse(old).n || 1 : 0;
-        for (let i = n; i < on; i++) cmds.push(["DEL", PFX + "c:" + b.id + ":" + i]);
-        cmds.push(["HSET", PFX + "meta", b.id, JSON.stringify({ u, n, by: me, t: Date.now(), size: (n - 1) * PART + b.data.length })]);
+        const old = await one("HGET", metaKey(me), b.id), on = old ? JSON.parse(old).n || 1 : 0;
+        for (let i = n; i < on; i++) cmds.push(["DEL", partKey(me, b.id, i)]);
+        cmds.push(["HSET", metaKey(me), b.id, JSON.stringify({ u, n, t: Date.now(), size: (n - 1) * PART + b.data.length })]);
       }
-      await redis(cmds);
-      return send(200, { ok: true });
+      await redis(cmds); return send(200, { ok: true });
     }
     if (a === "del") {
       if (!idOk(b.id)) return send(400, { ok: false, error: "Неверный id" });
-      const old = await one("HGET", PFX + "meta", b.id), on = old ? JSON.parse(old).n || 1 : 1;
-      const cmds = []; for (let i = 0; i < on; i++) cmds.push(["DEL", PFX + "c:" + b.id + ":" + i]);
-      cmds.push(["HSET", PFX + "meta", b.id, JSON.stringify({ u: Date.now(), del: true, by: me, t: Date.now() })]);
-      await redis(cmds);
-      return send(200, { ok: true });
+      const old = await one("HGET", metaKey(me), b.id), on = old ? JSON.parse(old).n || 1 : 1, cmds = [];
+      for (let i = 0; i < on; i++) cmds.push(["DEL", partKey(me, b.id, i)]);
+      cmds.push(["HSET", metaKey(me), b.id, JSON.stringify({ u: Date.now(), del: true, t: Date.now() })]);
+      await redis(cmds); return send(200, { ok: true });
     }
     return send(400, { ok: false, error: "Неизвестное действие" });
   } catch (e) {

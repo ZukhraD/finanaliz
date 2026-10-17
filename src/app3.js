@@ -67,7 +67,7 @@ const DIALOG = `<dialog id="dlg"><div class="dh"><h2 id="dlgT"></h2></div><div c
 
 /* ---------- клиенты */
 function renderClients() {
-  const list = CLIENTS.slice().sort((a, b) => b.updated - a.updated);
+  const list = CLIENTS.filter(c => typeof cloudVisible !== "function" || cloudVisible(c)).sort((a, b) => b.updated - a.updated);
   const last = list[0];
   const okedOf = c => (c.card.oked && c.card.oked[0] && c.card.oked[0].code ? "ОКЭД " + c.card.oked[0].code + (c.card.oked[0].name ? " · " + okedNameL(c.card.oked[0].code, c.card.oked[0].name) : "") : (c.card.activity || ""));
   const stOf = c => { const s = c.concl?.status || "Черновик"; return s === "Утверждено" ? ["ok", s] : s === "На проверке" ? ["chk", s] : ["nd", s]; };
@@ -79,7 +79,7 @@ function renderClients() {
       <div class="cstat">${stChip(...stOf(c))}</div>
       <div class="cact"><button class="btn primary" data-open="${c.id}">Открыть</button><button class="btn ghost" data-exp="${c.id}" title="Сохранить файл клиента">Файл</button><button class="btn ghost danger" data-del="${c.id}">Удалить</button></div></li>`).join("");
   document.body.innerHTML = `<div class="home">
-    <header class="hbar"><div class="mark" aria-hidden="true"><span></span></div><b>Финансовый анализ</b><span class="hnote">${typeof cloudOn === "function" && cloudOn() ? "общая база отдела · данные зашифрованы и доступны с любого устройства" : "работает без интернета · данные остаются на этом компьютере"}${LOCK.on ? " · защищено ПИН-кодом" : ""}</span>
+    <header class="hbar"><div class="mark" aria-hidden="true"><span></span></div><b>Финансовый анализ</b><span class="hnote">${typeof cloudOn === "function" && cloudOn() ? "облачная база · ваши клиенты зашифрованы и доступны с любого устройства" : "работает без интернета · данные остаются на этом компьютере"}${LOCK.on ? " · защищено ПИН-кодом" : ""}</span>
       <span class="hsec">${langSwitch()}${typeof cloudHeaderHTML === "function" ? cloudHeaderHTML() : ""}${cryptoOk() ? (LOCK.on ? `<button class="btn ghost" data-act="lock">Заблокировать</button><button class="btn ghost" data-act="pinset">Сменить ПИН</button><button class="btn ghost" data-act="pinoff">Снять ПИН</button>` : `<button class="btn ghost" data-act="pinset">Защитить ПИН-кодом</button>`) : ""}</span></header>
     ${(() => { const n = list.filter(c => !c.demo && (!c.saved || c.saved < c.updated)).length; return n ? `<div class="hwarn"><b>${n === 1 ? "1 клиент изменён" : n + " клиентов изменены"} после последнего сохранения в файл.</b> Данные хранятся только в этом браузере — если очистить его, они пропадут. <button class="btn primary" data-act="backup">Сохранить всех клиентов в файл</button></div>` : ""; })()}
     <section class="hero">

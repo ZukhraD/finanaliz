@@ -464,3 +464,4 @@ table.fcq tr.sub td.lab { padding-left: 28px; }
 /* общая база */
 .cloudchip { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; padding: 4px 10px; border-radius: 999px; background: #eef2ff; color: #023dff; }
 .cloudchip .small.bad, [data-cloudst].bad { color: #c81e1e; }
+.rcode { font: 600 20px/1.4 ui-monospace, Menlo, Consolas, monospace; letter-spacing: 1px; background: #f4f6ff; border: 1px dashed #023dff; border-radius: 8px; padding: 10px 14px; text-align: center; margin: 12px 0; }
