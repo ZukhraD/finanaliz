@@ -15,7 +15,7 @@ const m2 = v => (isNum(v) ? nf2.format(v) : "");
 const K1 = v => (isNum(v) ? nf1.format(v / 1000) : "");          // тенге → тыс. тг для показа и правки
 const fromK = s => { const v = parseNum(s); return v === null ? null : Math.round(v * 1000 * 100) / 100; };
 const pctFmt = v => (isNum(v) ? nf1.format(v * 100) + " %" : "");
-function ensureDocs(c = C) { if (!c) return; migrateOdr(c); c.decl = c.decl || []; c.bank = c.bank || []; c.dset = c.dset || { pct: 0.02, bpct: 0.1 }; c.fx = c.fx || {}; for (const b of c.bank) b.kind = b.kind || "turn"; }
+function ensureDocs(c = C) { if (!c) return; migrateOdr(c); c.decl = c.decl || []; c.bank = c.bank || []; c.dset = c.dset || { pct: 0.3, bpct: 0.1 }; if (c.dset.pct === 0.02) c.dset.pct = 0.3; c.fx = c.fx || {}; for (const b of c.bank) b.kind = b.kind || "turn"; }
 function perMonths(p) {
   const d = new Date(p.date); if (!p.date || isNaN(d)) return [];
   let y = d.getFullYear(), m = d.getMonth() + 1; const out = [];
@@ -191,7 +191,7 @@ const TAXFIX = {
 const TAX_IDS = ["rev", "vat", "sgd", "cit", "fot"], BANK_IDS = ["bank_rev", "bank_cf"];
 function taxChecks(k, p) {
   ensureDocs();
-  const pid = p.id, g = key => val(k, key, pid), tol = N(C.card.tol) || 1, pct = N(C.dset.pct) || 0.02, bp = N(C.dset.bpct) || 0.1, out = [];
+  const pid = p.id, g = key => val(k, key, pid), tol = N(C.card.tol) || 1, pct = N(C.dset.pct) || 0.3, bp = N(C.dset.bpct) || 0.1, out = [];
   const cell = key => ({ k, key, pid });
   const add = (id, title, aLab, a, bLab, bo, o) => {
     if (!bo) return;
@@ -201,16 +201,16 @@ function taxChecks(k, p) {
     out.push({ id, grp: o.grp || "tax", title, aLab, a, bLab, b: bo.v, cov: bo.cov, need: bo.need, full, diff, rel, st, cells: o.cells, fix: o.fix || TAXFIX[id], docs: bo.docs, nofx: bo.nofx });
   };
   const rv = declVal(k, p, "rev");
-  add("rev", "Выручка и доход по декларации", "Выручка по ОПиУ", g("rev"), rv && rv.docs.some(d => d.form !== "100") ? "Доход по декларации (" + [...new Set(rv.docs.map(d => d.form + ".00"))].join(", ") + ")" : "Доход от реализации по ф. 100.00", rv, { ok: pct, risk: 0.1, cells: [cell("rev")] });
+  add("rev", "Выручка и доход по декларации", "Выручка по ОПиУ", g("rev"), rv && rv.docs.some(d => d.form !== "100") ? "Доход по декларации (" + [...new Set(rv.docs.map(d => d.form + ".00"))].join(", ") + ")" : "Доход от реализации по ф. 100.00", rv, { ok: pct, risk: pct + 0.2, cells: [cell("rev")] });
   const vt = declVal(k, p, "vat_turn"), vx = declVal(k, p, "vat_ex");
-  if (vt) add("vat", "Выручка и оборот по НДС", "Выручка по ОПиУ", g("rev"), vx && vx.cov === vt.cov ? "Облагаемый и освобождённый оборот (ф. 300.00)" : "Облагаемый оборот (ф. 300.00)", { ...vt, v: vt.v + (vx && vx.cov === vt.cov ? vx.v : 0) }, { ok: pct * 2, risk: 0.15, cells: [cell("rev")] });
+  if (vt) add("vat", "Выручка и оборот по НДС", "Выручка по ОПиУ", g("rev"), vx && vx.cov === vt.cov ? "Облагаемый и освобождённый оборот (ф. 300.00)" : "Облагаемый оборот (ф. 300.00)", { ...vt, v: vt.v + (vx && vx.cov === vt.cov ? vx.v : 0) }, { ok: pct, risk: pct + 0.2, cells: [cell("rev")] });
   const sg = declVal(k, p, "sgd");
   const inc = isNum(g("rev")) ? g("rev") + N(g("ooi")) + N(g("fin_inc")) + N(g("onoi_in")) : null;
-  add("sgd", "Все доходы и совокупный годовой доход", "Доходы по ОПиУ (выручка, прочие, финансовые)", inc, "СГД по ф. 100.00", sg, { ok: pct * 2, risk: 0.15, max: "chk", cells: [cell("rev"), cell("ooi"), cell("fin_inc")] });
+  add("sgd", "Все доходы и совокупный годовой доход", "Доходы по ОПиУ (выручка, прочие, финансовые)", inc, "СГД по ф. 100.00", sg, { ok: pct, risk: pct + 0.2, max: "chk", cells: [cell("rev"), cell("ooi"), cell("fin_inc")] });
   const ct = declVal(k, p, "cit");
   add("cit", "КПН по отчётности и по декларации", "Расход по КПН в ОПиУ", g("cit"), ct && ct.docs.some(d => d.form === "910") ? "Налог по ф. 910.00" : "КПН по декларации", ct, { ok: 0.05, risk: 0.3, max: "chk", cells: [cell("cit")] });
   const ft = declVal(k, p, "fot");
-  if (ft) add("fot", "ФОТ и доходы работников", "ФОТ (справочно в ОПиУ)", g("fot"), "Доходы работников по декларации", ft, { ok: pct * 2, risk: 0.15, max: "chk", cells: [cell("fot")] });
+  if (ft) add("fot", "ФОТ и доходы работников", "ФОТ (справочно в ОПиУ)", g("fot"), "Доходы работников по декларации", ft, { ok: pct, risk: pct + 0.2, max: "chk", cells: [cell("fot")] });
   const bk = bankVal(k, p);
   if (bk) {
     const netLab = bk.turn ? "Кредитовые обороты (по справкам — без исключений)" : "Чистые кредитовые обороты";
@@ -269,7 +269,7 @@ function pageTax() {
   if (!decl.length) return h + `<div class="empty"><h2>Декларации не загружены</h2><p class="muted">Загрузите декларации из кабинета налогоплательщика (PDF) — или введите суммы вручную, если документ отсканирован.</p><button class="btn primary" data-act="docdlg" data-mode="tax">Загрузить декларации</button></div>`;
   h += `<section class="panel"><h2>Сверка с отчётностью — ${esc(compName(k))}</h2><p class="hint">Тыс. тг. Расхождение: ${LEGEND}. Сверка выполняется, когда декларации покрывают весь период.</p>
     ${checksTable(k, TAX_IDS, "Для периодов анализа нет подходящих деклараций: проверьте год и часть периода в загруженных декларациях.")}
-    <div class="grid2 tight" style="margin-top:12px;max-width:320px"><label class="f"><span>Допуск расхождений, %</span><input class="inp num" data-dset="pct" value="${esc(fmt(N(C.dset.pct) * 100, "m1"))}"></label></div></section>`;
+    <div class="grid2 tight" style="margin-top:12px;max-width:320px"><label class="f"><span>Норма расхождений ФО и деклараций, до %</span><input class="inp num" data-dset="pct" value="${esc(fmt(N(C.dset.pct) * 100, "m1"))}"></label></div></section>`;
   const ks = Object.keys(DocParse.KEYS).filter(key => decl.some(d => d.vals && isNum(d.vals[key])));
   const sorted = decl.slice().sort((a, b) => (a.year - b.year) || String(a.part).localeCompare(String(b.part)) || String(a.form).localeCompare(String(b.form)));
   h += `<section class="panel"><h2>Декларации (${decl.length})</h2><p class="hint">Тыс. тг — суммы из деклараций переведены из тенге автоматически.</p><div class="tablewrap" style="max-height:none"><table class="data"><thead><tr><th class="lab">Форма</th><th>Период</th>${ks.map(key => `<th>${esc(DocParse.KEYS[key].t)}</th>`).join("")}<th></th></tr></thead><tbody>
