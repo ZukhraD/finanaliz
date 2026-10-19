@@ -1,5 +1,7 @@
 "use strict";
 /* ---------------------------------------------------------------- прогноз ДДС: база и стресс (та же логика, что в Excel-шаблоне / refmodel) */
+// цель «Пополнение оборотных средств»: платёж по запрашиваемому кредиту — только проценты; инвестиции, рефинансирование — проценты и основной долг
+const reqWC = () => /оборотн/i.test((C && C.card && C.card.purpose) || "");
 const SCH = { "Дифференцированный": 1, "Аннуитет": 2, "В конце срока": 3 };
 function fcParams() {
   if (!C.fc) C.fc = JSON.parse(JSON.stringify(S.fc_default));
@@ -68,6 +70,7 @@ function forecastRaw(obj, s, Hset) {
     for (let t = 0; t <= H; t++) { I[t] += it[t]; PR[t] += pr[t]; }
   }
   const R = f.req, [nI, nP] = N(R.amt) > 0 ? amort(N(R.amt), N(R.rate) + P.rshock, Math.max(1, N(R.term)), N(R.grace), SCH[R.scheme] || 1, null, Math.max(1, N(R.month)), H) : [new Array(H + 1).fill(0), new Array(H + 1).fill(0)];
+  if (reqWC()) nP.fill(0);   // оборотный кредит: в нагрузке только проценты, основной долг возобновляется из оборота
   const icapex = t => f.projects.reduce((a, p) => a + (t >= N(p.start) && t < N(p.start) + N(p.dur) ? N(p.amt) / Math.max(1, N(p.dur)) : 0), 0) * (1 + P.overrun);
   const dpm = 365 / 12, rows = [], revs = [], cogss = [];
   let cashPre = g("cash") + g("stinv"), cashPost = cashPre, nbal = 0, nwcPrev = g("ar") + g("inv") - g("ap");

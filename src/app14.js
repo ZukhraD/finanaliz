@@ -155,7 +155,7 @@ function fcqRaw(obj) {
   const R = f.req, nrep = new Array(Q + 1).fill(0), ndraw = new Array(Q + 1).fill(0), rk = { НКЛ: 0, ВКЛ: 1, Кредит: 2 }[R.kind || "Кредит"] ?? 2;
   if (N(R.amt) > 0) {
     const [nI, nP] = amort(N(R.amt), N(R.rate), Math.max(1, N(R.term)), N(R.grace), SCH[R.scheme] || 1, null, Math.max(1, N(R.month)), H);
-    for (let t = 1; t <= H; t++) { nrep[qi(t)] += nP[t]; intr[qi(t)] += nI[t]; }
+    for (let t = 1; t <= H; t++) { nrep[qi(t)] += reqWC() ? 0 : nP[t]; intr[qi(t)] += nI[t]; }
     if (N(R.month) <= H) ndraw[qi(Math.max(1, N(R.month)))] += N(R.amt);
   }
   const proj = t => f.projects.reduce((a, p) => a + (t >= N(p.start) && t < N(p.start) + N(p.dur) ? N(p.amt) / Math.max(1, N(p.dur)) : 0), 0) * (1 + P.overrun);
@@ -290,7 +290,7 @@ function pageFc() {
     ${Object.keys(FC_LAB).map(k => `<tr><td class="lab">${FC_LAB[k]}</td><td class="cell">${fcIn(`scen.${k}.0`, f.scen[k][0], FC_PCT.has(k))}</td><td class="cell">${fcIn(`scen.${k}.1`, f.scen[k][1], FC_PCT.has(k))}</td></tr>`).join("")}
     <tr><td class="lab">Ставка КПН, %</td><td class="cell">${fcIn("cit", f.cit, true)}</td><td></td></tr>
     </tbody></table></div></div>
-    <div><h3>Запрашиваемый кредит (в Банке)</h3><div class="grid2 tight">
+    <div><h3>Запрашиваемый кредит (в Банке)</h3>${reqWC() ? `<p class="hint" style="margin:4px 0 8px">Цель — пополнение оборотных средств: в нагрузке и прогнозе учитываются только проценты, основной долг возобновляется из оборота.</p>` : ""}<div class="grid2 tight">
       <label class="f"><span>Сумма, тыс. тг</span>${fcIn("req.amt", f.req.amt)}</label><label class="f"><span>Месяц выдачи (от начала прогноза)</span>${fcIn("req.month", f.req.month)}</label>
       <label class="f"><span>Срок, мес.</span>${fcIn("req.term", f.req.term)}</label><label class="f"><span>Льготный период по ОД, мес.</span>${fcIn("req.grace", f.req.grace)}</label>
       <label class="f"><span>Ставка, %</span>${fcIn("req.rate", f.req.rate, true)}</label>
