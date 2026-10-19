@@ -48,6 +48,19 @@ async function fail(login, ip) {
   c.push(["INCR", P + "fail:ip:" + ip], ["EXPIRE", P + "fail:ip:" + ip, WIN]); await redis(c);
 }
 const TOO_MANY = "Слишком много неудачных попыток. Попробуйте через 15 минут.";
+// администратор — первый зарегистрированный сотрудник; он может восстановить доступ коллеге, забывшему пароль
+// (ключ данных каждого сотрудника дополнительно «завёрнут» открытым ключом администратора; закрытый ключ хранится у администратора зашифрованным)
+async function adminLogin() {
+  const a = await one("GET", P + "admin"); if (a) return a;
+  const users = (await one("SMEMBERS", P + "users")) || []; if (!users.length) return null;
+  const recs = await redis(users.map(l => ["GET", P + "user:" + l])); let best = null;
+  recs.forEach((r, i) => { if (!r) return; const o = JSON.parse(r); if (!best || (o.t || 0) < best.t) best = { l: users[i], t: o.t || 0 }; });
+  if (!best) return null; await one("SET", P + "admin", best.l, "NX"); return one("GET", P + "admin");
+}
+async function adminInfo(l, r) {
+  const adm = await adminLogin(), ks = await one("GET", P + "adminkeys"), k = ks ? JSON.parse(ks) : null;
+  return { admin: l === adm, adminPub: k ? k.pub : null, hasEscrow: !!(r && r.ewrap), adminPriv: l === adm && k ? k.priv : null };
+}
 const userKey = l => P + "user:" + l, metaKey = l => P + "u:" + l + ":meta", partKey = (l, id, i) => P + "u:" + l + ":c:" + id + ":" + i;
 
 module.exports = async (req, res) => {
@@ -89,7 +102,7 @@ module.exports = async (req, res) => {
         rsalt: b.rsalt, rhs, rh: await scryptHash(b.rauth, rhs), rwrap: b.rwrap, ver: 1, t: Date.now() };
       if (!(await one("SET", userKey(l), JSON.stringify(rec), "NX"))) return send(409, { ok: false, error: "Такой логин уже занят" });
       await one("SADD", P + "users", l);
-      return send(200, { ok: true, token: token(l, rec.ver), wrap: rec.wrap, name: rec.name });
+      return send(200, { ok: true, token: token(l, rec.ver), wrap: rec.wrap, name: rec.name, ...(await adminInfo(l, rec)) });
     }
     if (a === "login" || a === "recover") {   // recover: по коду восстановления — выдаёт ключ, завёрнутый кодом, и (с новым паролем) меняет пароль
       const l = normLogin(b.login);
@@ -99,12 +112,35 @@ module.exports = async (req, res) => {
       const good = r && (a === "login" ? b64ok(b.auth, 100) && eq(await scryptHash(b.auth, r.hs), r.h) : b64ok(b.rauth, 100) && eq(await scryptHash(b.rauth, r.rhs), r.rh));
       if (!good) { await fail(l, ip); return send(403, { ok: false, error: a === "login" ? "Неверный логин или пароль" : "Неверный логин или код восстановления" }); }
       await one("DEL", P + "fail:l:" + l);
-      if (a === "login") return send(200, { ok: true, token: token(l, r.ver), wrap: r.wrap, name: r.name || "" });
+      if (a === "login") return send(200, { ok: true, token: token(l, r.ver), wrap: r.wrap, name: r.name || "", ...(await adminInfo(l, r)) });
       if (!b.auth) return send(200, { ok: true, rwrap: r.rwrap });
       if (!b64ok(b.auth, 100) || !b64ok(b.salt, 40) || !wrapOk(b.wrap)) return send(400, { ok: false, error: "Неверные данные" });
       r.hs = crypto.randomBytes(16).toString("base64"); r.h = await scryptHash(b.auth, r.hs); r.salt = b.salt; r.wrap = b.wrap; r.ver = (r.ver || 1) + 1;
       await one("SET", userKey(l), JSON.stringify(r));
-      return send(200, { ok: true, token: token(l, r.ver), name: r.name || "" });
+      return send(200, { ok: true, token: token(l, r.ver), name: r.name || "", ...(await adminInfo(l, r)) });
+    }
+    // сброс пароля через администратора: запрос (сотрудник) → подтверждение (администратор) → завершение (сотрудник)
+    if (a === "resetreq" || a === "resetpoll" || a === "resetfinish") {
+      const l = normLogin(b.login);
+      if (!validLogin(l)) return send(400, { ok: false, error: "Неверный логин" });
+      if (await blocked(l, ip)) return send(429, { ok: false, error: TOO_MANY });
+      const u = await one("GET", userKey(l)), r = u ? JSON.parse(u) : null;
+      if (a === "resetreq") {
+        if (!r) { await fail("", ip); return send(404, { ok: false, error: "Такого логина нет" }); }
+        if (!r.ewrap) return send(409, { ok: false, error: "Для этой учётной записи восстановление через администратора ещё не настроено — войдите хотя бы раз после обновления сайта или используйте код восстановления" });
+        if (!b64ok(b.auth, 100) || !b64ok(b.salt, 40) || !b64ok(b.epub, 1000)) return send(400, { ok: false, error: "Неверные данные" });
+        const hs = crypto.randomBytes(16).toString("base64"), code = String(crypto.randomInt(100000, 1000000));
+        const rec = { login: l, name: r.name || "", salt: b.salt, hs, h: await scryptHash(b.auth, hs), epub: b.epub, code, t: Date.now() };
+        await redis([["SET", P + "reset:" + l, JSON.stringify(rec), "EX", 259200], ["SADD", P + "resets", l]]);
+        return send(200, { ok: true, code });
+      }
+      const q = await one("GET", P + "reset:" + l), R = q ? JSON.parse(q) : null;
+      if (!R || !b64ok(b.auth, 100) || !eq(await scryptHash(b.auth, R.hs), R.h)) { await fail(l, ip); return send(404, { ok: false, error: "Запрос не найден или устарел — отправьте его заново" }); }
+      if (a === "resetpoll") return send(200, { ok: true, grant: R.grant || null });
+      if (!R.grant || !r || !wrapOk(b.wrap)) return send(409, { ok: false, error: "Администратор ещё не подтвердил запрос" });
+      r.hs = R.hs; r.h = R.h; r.salt = R.salt; r.wrap = b.wrap; r.ver = (r.ver || 1) + 1;
+      await redis([["SET", userKey(l), JSON.stringify(r)], ["DEL", P + "reset:" + l], ["SREM", P + "resets", l], ["DEL", P + "fail:l:" + l]]);
+      return send(200, { ok: true, token: token(l, r.ver), wrap: r.wrap, name: r.name || "", ...(await adminInfo(l, r)) });
     }
 
     // дальше — только с действующим входом (после смены пароля старые входы на других устройствах прекращаются)
@@ -127,10 +163,36 @@ module.exports = async (req, res) => {
       await one("SET", userKey(me), JSON.stringify(U));
       return send(200, { ok: true, token: token(me, U.ver) });
     }
+    if (a === "escrow") {   // ключ данных, завёрнутый открытым ключом администратора
+      if (!b64ok(b.ewrap, 800)) return send(400, { ok: false, error: "Неверные данные" });
+      U.ewrap = b.ewrap; await one("SET", userKey(me), JSON.stringify(U)); return send(200, { ok: true });
+    }
+    const isAdm = async () => me === (await adminLogin());
+    if (a === "setadmin") {
+      if (!(await isAdm())) return send(403, { ok: false, error: "Только для администратора" });
+      if (!b64ok(b.pub, 1000) || !b.priv || !b64ok(b.priv.iv, 40) || !b64ok(b.priv.ct, 4000)) return send(400, { ok: false, error: "Неверные данные" });
+      const ok = await one("SET", P + "adminkeys", JSON.stringify({ pub: b.pub, priv: b.priv, t: Date.now() }), "NX");
+      return send(200, { ok: !!ok });
+    }
+    if (a === "resetlist" || a === "resetgrant" || a === "resetdeny") {
+      if (!(await isAdm())) return send(403, { ok: false, error: "Только для администратора" });
+      if (a === "resetlist") {
+        const ls = (await one("SMEMBERS", P + "resets")) || []; if (!ls.length) return send(200, { ok: true, list: [] });
+        const rs = await redis(ls.map(l => ["GET", P + "reset:" + l])), us = await redis(ls.map(l => ["GET", userKey(l)])), list = [], gone = [];
+        ls.forEach((l, i) => { if (!rs[i] || !us[i]) { gone.push(l); return; } const R = JSON.parse(rs[i]), u = JSON.parse(us[i]); list.push({ login: l, name: R.name, code: R.code, t: R.t, granted: !!R.grant, epub: R.epub, ewrap: u.ewrap || null }); });
+        if (gone.length) await redis(gone.map(l => ["SREM", P + "resets", l]));
+        return send(200, { ok: true, list });
+      }
+      const l = normLogin(b.login), q = await one("GET", P + "reset:" + l); if (!q) return send(404, { ok: false, error: "Запрос не найден" });
+      if (a === "resetdeny") { await redis([["DEL", P + "reset:" + l], ["SREM", P + "resets", l]]); return send(200, { ok: true }); }
+      if (!b64ok(b.grant, 800)) return send(400, { ok: false, error: "Неверные данные" });
+      const R = JSON.parse(q); R.grant = b.grant; await one("SET", P + "reset:" + l, JSON.stringify(R), "EX", 86400);
+      return send(200, { ok: true });
+    }
     if (a === "list") {
       const h = (await one("HGETALL", metaKey(me))) || [], meta = {};
       for (let i = 0; i < h.length; i += 2) meta[h[i]] = JSON.parse(h[i + 1]);
-      return send(200, { ok: true, me, meta });
+      return send(200, { ok: true, me, meta, ...(await adminInfo(me, U)) });
     }
     if (a === "get") {
       if (!idOk(b.id)) return send(400, { ok: false, error: "Неверный id" });

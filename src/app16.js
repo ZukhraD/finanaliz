@@ -6,7 +6,7 @@
    На общем компьютере при выходе клиенты сотрудника удаляются из браузера (если не выбрано «оставить копию»). */
 const CLOUD = { cfg: null, token: "", login: "", name: "", key: null, synced: {}, meta: {}, busy: false, last: null, err: "", queued: false };
 const CL_STORE = "finkz.cloud.v2", KDF_IT = 600000;
-const clSave = () => { try { localStorage.setItem(CL_STORE, JSON.stringify({ token: CLOUD.token, login: CLOUD.login, name: CLOUD.name, synced: CLOUD.synced })); } catch (e) { /* без запоминания */ } };
+const clSave = () => { try { localStorage.setItem(CL_STORE, JSON.stringify({ token: CLOUD.token, login: CLOUD.login, name: CLOUD.name, synced: CLOUD.synced, admin: CLOUD.admin, adminPub: CLOUD.adminPub, hasEscrow: CLOUD.hasEscrow, adminPriv: CLOUD.adminPriv })); } catch (e) { /* без запоминания */ } };
 try { Object.assign(CLOUD, JSON.parse(localStorage.getItem(CL_STORE) || "{}")); } catch (e) { /* нет сессии */ }
 const cloudOn = () => !!(CLOUD.token && CLOUD.key);
 // какие клиенты видны в этом браузере: свои (после входа), локальные без владельца, пример; чужие копии скрыты
@@ -95,9 +95,58 @@ async function cloudRecover({ login, code, pass }) {
   const j = await api("recover", { login, rauth, ...(await passWrap(pass, raw)) });
   await cloudStart(j, raw, login);
 }
+/* --- восстановление доступа через администратора (RSA-OAEP 2048) */
+const RSA = { name: "RSA-OAEP", hash: "SHA-256" };
+const rsaGen = () => crypto.subtle.generateKey({ ...RSA, modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]) }, true, ["encrypt", "decrypt"]);
+const rsaEnc = async (pubB64, u8) => b64(new Uint8Array(await crypto.subtle.encrypt({ name: "RSA-OAEP" }, await crypto.subtle.importKey("spki", unb64(pubB64), RSA, false, ["encrypt"]), u8)));
+function applyAdmin(j) { if (j && "admin" in j) Object.assign(CLOUD, { admin: !!j.admin, adminPub: j.adminPub || null, hasEscrow: !!j.hasEscrow, adminPriv: j.adminPriv || null }); }
+async function ensureAdminKeys() {
+  if (!CLOUD.admin || CLOUD.adminPub) return;
+  const kp = await rsaGen(), pub = b64(new Uint8Array(await crypto.subtle.exportKey("spki", kp.publicKey)));
+  const pk = new Uint8Array(await crypto.subtle.exportKey("pkcs8", kp.privateKey)), priv = await aesEnc(CLOUD.key, pk); pk.fill(0);
+  const j = await api("setadmin", { pub, priv }); if (j.ok) { CLOUD.adminPub = pub; CLOUD.adminPriv = priv; }
+}
+async function escrowRaw(raw) { if (!CLOUD.adminPub) return; await api("escrow", { ewrap: await rsaEnc(CLOUD.adminPub, raw) }); CLOUD.hasEscrow = true; }
+async function enableEscrow(pass) {   // для входа, сохранённого до обновления: один раз подтвердить паролем
+  const salt = unb64((await api("salt", { login: CLOUD.login })).salt);
+  const j = await api("login", { login: CLOUD.login, auth: b64(await pbkdf2(pass, salt, "auth")) }); applyAdmin(j); CLOUD.token = j.token;
+  const raw = await aesDec(await aesKey(await pbkdf2(pass, salt, "kek"), ["decrypt"]), j.wrap);
+  await ensureAdminKeys(); await escrowRaw(raw); raw.fill(0); clSave();
+}
+async function approveReset(x) {
+  const pk = await aesDec(CLOUD.key, CLOUD.adminPriv), priv = await crypto.subtle.importKey("pkcs8", pk, RSA, false, ["decrypt"]); pk.fill(0);
+  const raw = new Uint8Array(await crypto.subtle.decrypt({ name: "RSA-OAEP" }, priv, unb64(x.ewrap)));
+  const grant = await rsaEnc(x.epub, raw); raw.fill(0);
+  await api("resetgrant", { login: x.login, grant });
+}
+const RS_KEY = "finkz.reset.v1";
+const rsPending = () => { try { return JSON.parse(localStorage.getItem(RS_KEY) || "null"); } catch (e) { return null; } };
+async function resetRequest(login, pass) {
+  const cfg = await cloudCfg(); if (!cfg.configured) throw new Error(tr("Облачная база не настроена на сервере"));
+  const salt = crypto.getRandomValues(new Uint8Array(16)), auth = b64(await pbkdf2(pass, salt, "auth")), kek = b64(await pbkdf2(pass, salt, "kek"));
+  const kp = await rsaGen(), epub = b64(new Uint8Array(await crypto.subtle.exportKey("spki", kp.publicKey))), jwk = await crypto.subtle.exportKey("jwk", kp.privateKey);
+  const j = await api("resetreq", { login, auth, salt: b64(salt), epub });
+  try { localStorage.setItem(RS_KEY, JSON.stringify({ login: String(login).trim().toLowerCase(), auth, salt: b64(salt), kek, jwk, code: j.code, t: Date.now() })); } catch (e) { /* нет хранилища */ }
+  return j.code;
+}
+async function resetCheck() {   // true — доступ восстановлен; false — ещё ждём; null — запроса нет
+  const p = rsPending(); if (!p) return null;
+  let j; try { j = await api("resetpoll", { login: p.login, auth: p.auth }); } catch (e) { if (/не найден|устарел/.test(e.message)) localStorage.removeItem(RS_KEY); throw e; }
+  if (!j.grant) return false;
+  const priv = await crypto.subtle.importKey("jwk", p.jwk, RSA, false, ["decrypt"]);
+  const raw = new Uint8Array(await crypto.subtle.decrypt({ name: "RSA-OAEP" }, priv, unb64(j.grant)));
+  const wrap = await aesEnc(await aesKey(unb64(p.kek), ["encrypt"]), raw);
+  const f = await api("resetfinish", { login: p.login, auth: p.auth, wrap });
+  localStorage.removeItem(RS_KEY);
+  await cloudStart(f, raw, p.login);
+  return true;
+}
 async function cloudStart(j, raw, login) {
-  CLOUD.key = await aesKey(raw, ["encrypt", "decrypt"]); raw.fill(0);
+  CLOUD.key = await aesKey(raw, ["encrypt", "decrypt"]);
   CLOUD.token = j.token; CLOUD.login = String(login).trim().toLowerCase(); CLOUD.name = j.name || ""; CLOUD.synced = {};
+  applyAdmin(j);
+  try { await ensureAdminKeys(); if (!CLOUD.hasEscrow) await escrowRaw(raw); } catch (e) { /* восстановление через администратора настроится при следующем входе */ }
+  raw.fill(0);
   try { await idbKey("put", CLOUD.key); } catch (e) { /* ключ только на эту вкладку */ }
   clSave(); await cloudSync(true);
 }
@@ -148,7 +197,8 @@ async function cloudSync(force) {
   let got = 0, sent = 0, gone = 0;
   try {
     if (!CLOUD.cfg) await cloudCfg();
-    CLOUD.meta = (await api("list")).meta || {};
+    { const Lr = await api("list"); CLOUD.meta = Lr.meta || {}; applyAdmin(Lr); }
+    if (CLOUD.admin) { try { CLOUD.resets = ((await api("resetlist")).list || []).filter(x => !x.granted); } catch (e) { CLOUD.resets = []; } }
     for (const [id, m] of Object.entries(CLOUD.meta)) {
       const i = CLIENTS.findIndex(c => c.id === id), loc = i >= 0 ? CLIENTS[i] : null;
       if (loc && !cloudMine(loc)) continue;
@@ -203,8 +253,8 @@ function cloudHeaderHTML(pin = "") {
   if (!cloudOn()) return `${online ? `<button class="btn primary sm" data-act="cloudin">Войти / Регистрация</button>` : ""}${pin ? `<details class="umenu"><summary class="btn ghost sm" aria-label="Ещё">⋯</summary><div class="mlist">${pin}</div></details>` : ""}`;
   const nm = CLOUD.name || CLOUD.login, ini = nm.split(/\s+/).map(w => w[0] || "").join("").slice(0, 2).toUpperCase();
   return `<details class="umenu"><summary class="ubtn" title="${esc(tr("Ваши клиенты хранятся на сервере в зашифрованном виде и доступны с любого устройства после входа. Другие сотрудники их не видят."))}">
-      <span class="ava" data-nt>${esc(ini)}</span><span class="uinfo"><b data-nt>${esc(nm)}</b><span data-cloudst="s" class="ust" title="${esc(cloudStatus())}">${esc(cloudStatus(true))}</span></span><span class="caret">▾</span></summary>
-    <div class="mlist"><button class="mi" data-act="cloudsync">Синхронизировать</button><button class="mi" data-act="cloudacc">Учётная запись</button>${pin}<hr><button class="mi" data-act="cloudout">Выйти</button></div></details>`;
+      <span class="ava" data-nt>${esc(ini)}</span><span class="uinfo"><b data-nt>${esc(nm)}</b><span data-cloudst="s" class="ust" title="${esc(cloudStatus())}">${esc(cloudStatus(true))}</span></span>${CLOUD.admin && (CLOUD.resets || []).length ? `<span class="mbadge">${CLOUD.resets.length}</span>` : ""}<span class="caret">▾</span></summary>
+    <div class="mlist"><button class="mi" data-act="cloudsync">Синхронизировать</button><button class="mi" data-act="cloudacc">Учётная запись</button>${CLOUD.admin ? `<button class="mi" data-act="resets">Запросы на сброс пароля${(CLOUD.resets || []).length ? ` <span class="mbadge">${CLOUD.resets.length}</span>` : ""}</button>` : ""}${pin}<hr><button class="mi" data-act="cloudout">Выйти</button></div></details>`;
 }
 const CL_TABS = [["in", "Вход"], ["reg", "Регистрация"], ["rec", "Забыли пароль?"]];
 async function cloudDialog(mode = "in") {
@@ -214,14 +264,18 @@ async function cloudDialog(mode = "in") {
   const fld = (id, lab, type = "text", ac = "off", val = "") => `<label class="f"><span>${lab}</span><input class="inp" id="${id}" type="${type}" autocomplete="${ac}" value="${esc(val)}"></label>`;
   const hint = { in: "После входа ваши клиенты загрузятся на это устройство, а изменения будут сохраняться на сервере в зашифрованном виде. Другие сотрудники ваших клиентов не видят.",
     reg: (cfg.firstUser ? "<b>Вы регистрируетесь первым.</b> Придумайте код приглашения — его вы потом передадите коллегам для регистрации. " : "Код приглашения выдаёт администратор. ") + "Пароль шифрует ваши данные и на сервер не отправляется. После регистрации появится код восстановления — запишите его: без него забытый пароль восстановить нельзя.",
-    rec: "Введите код восстановления, который вы записали при регистрации, и придумайте новый пароль. Входы на других устройствах после этого прекратятся." }[mode];
+    rec: "Введите логин и придумайте новый пароль — запрос уйдёт администратору. Он подтвердит его, и вы войдёте с новым паролем. Ваши клиенты сохранятся.",
+    code: "Введите код восстановления, который вы сохранили при регистрации, и придумайте новый пароль. Входы на других устройствах после этого прекратятся." }[mode];
   const fields = mode === "in" ? fld("clL", "Логин", "text", "username", CLOUD.login) + fld("clP", "Пароль", "password", "current-password")
     : mode === "reg" ? fld("clL", "Логин", "text", "username") + fld("clN", "Имя и фамилия", "text", "name") + fld("clP", "Пароль (не меньше 10 знаков)", "password", "new-password") + fld("clP2", "Повторите пароль", "password", "new-password") + fld("clI", cfg.firstUser ? "Придумайте код приглашения для коллег (не меньше 6 знаков)" : "Код приглашения")
+    : mode === "rec" ? fld("clL", "Логин", "text", "username", CLOUD.login) + fld("clP", "Новый пароль (не меньше 10 знаков)", "password", "new-password") + fld("clP2", "Повторите пароль", "password", "new-password")
     : fld("clL", "Логин", "text", "username", CLOUD.login) + fld("clR", "Код восстановления") + fld("clP", "Новый пароль (не меньше 10 знаков)", "password", "new-password") + fld("clP2", "Повторите пароль", "password", "new-password");
-  const body = `${tabs}<p class="hint">${hint}</p><div class="grid2" style="margin-top:8px">${fields}</div><p class="lockmsg" id="clMsg"></p>`;
+  if (mode === "rec" && rsPending()) return resetWait();
+  const alt = mode === "rec" ? `<p class="small" style="margin-top:6px"><button class="btn ghost sm" data-cltab="code">У меня есть код восстановления</button></p>` : mode === "code" ? `<p class="small" style="margin-top:6px"><button class="btn ghost sm" data-cltab="rec">Нет кода — попросить администратора</button></p>` : "";
+  const body = `${tabs.replace(`aria-selected="false" data-cltab="rec"`, mode === "code" ? `aria-selected="true" data-cltab="rec"` : `aria-selected="false" data-cltab="rec"`)}<p class="hint">${hint}</p><div class="grid2" style="margin-top:8px">${fields}</div>${alt}<p class="lockmsg" id="clMsg"></p>`;
   let code = "";
   setTimeout(() => { const el = document.querySelector("#clL"); if (el) el.focus(); }, 30);
-  const r = await dialog("Облачная база", body, [{ t: "Отменить", v: null }, { t: { in: "Войти", reg: "Зарегистрироваться", rec: "Сменить пароль и войти" }[mode], primary: true, keep: true, v: async dlg => {
+  const r = await dialog("Облачная база", body, [{ t: "Отменить", v: null }, { t: { in: "Войти", reg: "Зарегистрироваться", rec: "Отправить запрос администратору", code: "Сменить пароль и войти" }[mode], primary: true, keep: true, v: async dlg => {
     const g = id => (dlg.querySelector("#" + id) || {}).value || "", msg = dlg.querySelector("#clMsg");
     const f = { login: g("clL").trim(), name: g("clN").trim(), pass: g("clP"), invite: g("clI").trim(), code: g("clR") };
     if (!f.login || !f.pass) { msg.textContent = tr("Заполните логин и пароль"); return false; }
@@ -229,31 +283,45 @@ async function cloudDialog(mode = "in") {
       if (f.pass.length < 10) { msg.textContent = tr("Пароль — не меньше 10 знаков"); return false; }
       if (f.pass !== g("clP2")) { msg.textContent = tr("Пароли не совпадают"); return false; }
       if (mode === "reg" && !f.invite) { msg.textContent = tr("Введите код приглашения"); return false; }
-      if (mode === "rec" && recCode(f.code).length !== 24) { msg.textContent = tr("Код восстановления — 20 знаков"); return false; }
+      if (mode === "code" && recCode(f.code).length !== 24) { msg.textContent = tr("Код восстановления — 20 знаков"); return false; }
     }
     msg.textContent = tr("Проверяю… (шифрование занимает несколько секунд)");
-    try { if (mode === "reg") code = await cloudRegister(f); else if (mode === "rec") await cloudRecover(f); else await cloudLogin(f); return true; } catch (e) { msg.textContent = e.message; return false; }
+    try { if (mode === "reg") code = await cloudRegister(f); else if (mode === "code") await cloudRecover(f); else if (mode === "rec") { await resetRequest(f.login, f.pass); return "wait"; } else await cloudLogin(f); return true; } catch (e) { msg.textContent = e.message; return false; }
   } }]);
   if (!r) return;
+  if (r === "wait") return resetWait();
   render();
   if (code) await showRecoveryCode(code); else toast(tr("Вход выполнен"));
 }
+// ожидание подтверждения администратором: проверка каждые 5 секунд, пока окно открыто
+async function resetWait() {
+  const p = rsPending(); if (!p) return;
+  let done = false;
+  const tick = async () => { try { const r = await resetCheck(); if (r) { done = true; const d = document.getElementById("dlg"); if (d && d.open) d.close(); render(); toast(tr("Доступ восстановлен — вход выполнен")); } } catch (e) { const m = document.getElementById("rsMsg"); if (m) m.textContent = e.message; } };
+  const iv = setInterval(tick, 5000);
+  const r = await dialog("Запрос отправлен", `<p>Назовите администратору код подтверждения — так он убедится, что запрос отправили вы:</p><p class="rcode" data-nt>${esc(String(p.code).replace(/(\d{3})(\d{3})/, "$1 $2"))}</p><p class="hint">Как только администратор подтвердит, вход выполнится сам — окно можно не закрывать. Если закроете, вход выполнится при следующем открытии сайта на этом устройстве.</p><p class="lockmsg" id="rsMsg"></p>`,
+    [{ t: "Отменить запрос", v: "cancel" }, { t: "Проверить", primary: true, keep: true, v: async () => { await tick(); return done; } }]);
+  clearInterval(iv);
+  if (r === "cancel") { localStorage.removeItem(RS_KEY); toast(tr("Запрос отменён")); }
+}
 async function showRecoveryCode(code) {
+  const txt = `Финансовый анализ — код восстановления\nЛогин: ${CLOUD.login}\nКод: ${code}\n\nНужен, только если вы забудете пароль. Храните отдельно от пароля.`;
   for (;;) {
-    const ok = await dialog("Код восстановления", `<p>Запишите этот код и храните отдельно от пароля (например, на бумаге в сейфе). Он нужен, если вы забудете пароль. <b>Показывается один раз</b>; без него и без пароля ваши данные на сервере расшифровать невозможно — ни вам, ни администратору.</p>
-      <p class="rcode" data-nt>${esc(code)}</p><label class="chk"><input type="checkbox" id="rcOk"> Я записал(а) код восстановления</label>`,
-      [{ t: "Скопировать", v: "copy" }, { t: "Готово", primary: true, v: d => (d.querySelector("#rcOk").checked ? "ok" : "no") }]);
+    const ok = await dialog("Код восстановления", `<p>${CLOUD.admin ? "Вы администратор: если забудете пароль, восстановить доступ можно только этим кодом. Сохраните его." : "Если забудете пароль, доступ восстановит администратор. Этот код — запасной способ, без его участия."} Удобнее всего — скачать файл или сохранить в заметки.</p><p class="rcode" data-nt>${esc(code)}</p>`,
+      [{ t: "Скачать файл", v: "file" }, { t: "Скопировать", v: "copy" }, { t: "Готово", primary: true, v: "ok" }]);
     if (ok === "copy") { try { await navigator.clipboard.writeText(code); toast(tr("Код скопирован")); } catch (e) { /* вручную */ } continue; }
-    if (ok === "ok") return;
-    toast(tr("Отметьте, что код записан"));
+    if (ok === "file") { download(`Код_восстановления_${CLOUD.login}.txt`, txt, "text/plain;charset=utf-8"); continue; }
+    return;
   }
 }
+
 document.addEventListener("click", async e => {
   const t = e.target.closest("[data-cltab]");
   if (t) { e.preventDefault(); const d = document.getElementById("dlg"); if (d && d.open) d.close(); cloudDialog(t.dataset.cltab); return; }
   const b = e.target.closest("button[data-act]"); if (!b) return;
   const a = b.dataset.act;
   if (a === "cloudin") cloudDialog("in");
+  else if (a === "resets") resetsDialog();
   else if (a === "cloudsync") cloudSync(true);
   else if (a === "cloudout") {
     const r = await dialog("Выйти из облачной базы?", `<p>При выходе ваши клиенты удаляются из этого браузера — на сервере они остаются и откроются после следующего входа. Так на общем компьютере не останется конфиденциальных данных.</p><label class="chk"><input type="checkbox" id="clKeep"> Это мой личный компьютер — оставить копию клиентов для работы без интернета</label>`,
@@ -266,10 +334,15 @@ document.addEventListener("click", async e => {
     const r = await dialog("Учётная запись", `<p>Логин: <b data-nt>${esc(CLOUD.login)}</b>${CLOUD.name ? ` · <span data-nt>${esc(CLOUD.name)}</span>` : ""}</p>
       <h3>Сменить пароль</h3><div class="grid2"><label class="f"><span>Текущий пароль</span><input class="inp" id="cp0" type="password" autocomplete="current-password"></label><label class="f"><span>Новый пароль (не меньше 10 знаков)</span><input class="inp" id="cp1" type="password" autocomplete="new-password"></label><label class="f"><span>Повторите новый</span><input class="inp" id="cp2" type="password" autocomplete="new-password"></label></div>
       <p class="hint">После смены пароля входы на других устройствах прекратятся. Код восстановления остаётся прежним.</p>
+      ${CLOUD.hasEscrow || !CLOUD.adminPub && !CLOUD.admin ? "" : `<h3 style="margin-top:14px">Восстановление через администратора</h3><p class="hint">Включите, чтобы при забытом пароле доступ мог восстановить администратор. Для подтверждения введите текущий пароль выше.</p>`}
       <h3 style="margin-top:14px">Удалить учётную запись</h3><p class="hint">Удаляет учётную запись и всех ваших клиентов с сервера. Копии в этом браузере останутся. Для подтверждения введите текущий пароль выше.</p>`,
-      [{ t: "Закрыть", v: null }, { t: "Удалить с сервера", v: d => ({ del: true, o: d.querySelector("#cp0").value }) }, { t: "Сменить пароль", primary: true, v: d => ({ o: d.querySelector("#cp0").value, a: d.querySelector("#cp1").value, b: d.querySelector("#cp2").value }) }]);
+      [{ t: "Закрыть", v: null }, ...(CLOUD.hasEscrow || !CLOUD.adminPub && !CLOUD.admin ? [] : [{ t: "Включить восстановление", v: d => ({ esc: true, o: d.querySelector("#cp0").value }) }]), { t: "Удалить с сервера", v: d => ({ del: true, o: d.querySelector("#cp0").value }) }, { t: "Сменить пароль", primary: true, v: d => ({ o: d.querySelector("#cp0").value, a: d.querySelector("#cp1").value, b: d.querySelector("#cp2").value }) }]);
     if (!r) return;
     try {
+      if (r.esc) {
+        if (!r.o) { toast(tr("Введите текущий пароль")); return; }
+        await enableEscrow(r.o); render(); toast(tr("Восстановление через администратора включено")); return;
+      }
       if (r.del) {
         if (!r.o) { toast(tr("Введите текущий пароль")); return; }
         if (!(await dialog("Удалить учётную запись?", "<p>Все ваши клиенты будут удалены с сервера без возможности восстановления. Копии в этом браузере останутся.</p>", [{ t: "Отменить", v: false }, { t: "Удалить", primary: true, v: true }]))) return;
@@ -281,10 +354,28 @@ document.addEventListener("click", async e => {
     } catch (err) { toast(err.message); }
   }
 });
+async function resetsDialog() {
+  try { CLOUD.resets = ((await api("resetlist")).list || []).filter(x => !x.granted); } catch (e) { toast(e.message); return; }
+  const L = CLOUD.resets;
+  const rows = L.length ? L.map(x => `<div class="rsrow"><div><b data-nt>${esc(x.name || x.login)}</b> <span class="small muted" data-nt>${esc(x.login)}</span><br><span class="small">${esc(dDateTime(x.t))} · ${esc(tr("код"))} <b data-nt>${esc(String(x.code).replace(/(\d{3})(\d{3})/, "$1 $2"))}</b></span></div>
+      <div class="rsact">${x.ewrap ? `<button class="btn primary sm" data-rsok="${esc(x.login)}">Подтвердить</button>` : `<span class="small muted">нет ключа восстановления</span>`}<button class="btn ghost sm" data-rsno="${esc(x.login)}">Отклонить</button></div></div>`).join("") : `<p class="muted">Запросов нет.</p>`;
+  await dialog("Запросы на сброс пароля", `<p class="hint">Перед подтверждением позвоните сотруднику и сверьте код — он видит его у себя на экране.</p>${rows}`, [{ t: "Закрыть", primary: true, v: true }]);
+}
+document.addEventListener("click", async e => {
+  const ok = e.target.closest("[data-rsok]"), no = e.target.closest("[data-rsno]"); if (!ok && !no) return;
+  const l = (ok || no).dataset.rsok || (ok || no).dataset.rsno, x = (CLOUD.resets || []).find(r => r.login === l); if (!x) return;
+  (ok || no).disabled = true;
+  try {
+    if (ok) { await approveReset(x); toast(tr("Подтверждено — сотрудник войдёт с новым паролем")); }
+    else { await api("resetdeny", { login: l }); toast(tr("Запрос отклонён")); }
+    CLOUD.resets = CLOUD.resets.filter(r => r.login !== l);
+    const row = (ok || no).closest(".rsrow"); if (row) row.remove();
+  } catch (err) { toast(err.message); (ok || no).disabled = false; }
+});
 // восстановление сессии при открытии сайта
 (async () => {
   if (location.protocol === "file:") return;
-  if (!CLOUD.token) { cloudCfg(); return; }
+  if (!CLOUD.token) { await cloudCfg(); if (rsPending()) { try { if (await resetCheck()) { render(); toast(tr("Доступ восстановлен — вход выполнен")); } } catch (e) { /* ждём */ } } return; }
   try { CLOUD.key = await idbKey("get") || null; } catch (e) { CLOUD.key = null; }
   if (!CLOUD.key) { CLOUD.token = ""; clSave(); return; }
   await cloudCfg(); render(); cloudSync();
