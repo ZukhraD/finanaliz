@@ -18,7 +18,7 @@ fonts = json.dumps({"r": pdf_font("src/fonts/DejaVuSansCondensed.ttf", "FKAAAA+D
 css = open("src/app.css", encoding="utf-8").read()
 spec = open("src/spec.json", encoding="utf-8").read()
 oked = open("src/oked.json", encoding="utf-8").read().replace("</", "<\\/")
-js = "\n".join(open("src/" + f, encoding="utf-8").read() for f in ("app0.js", "app1.js", "app2.js", "app4.js", "app5.js", "app6.js", "app7.js", "app8.js", "app9.js", "app10.js", "app11.js", "app12.js", "app13.js", "app14.js", "app15.js", "app16.js", "app17.js", "app3.js"))
+js = "\n".join(open("src/" + f, encoding="utf-8").read() for f in ("app0.js", "app1.js", "app2.js", "app4.js", "app5.js", "app6.js", "app7.js", "app8.js", "app9.js", "app10.js", "app11.js", "app12.js", "app13.js", "app14.js", "app15.js", "app16.js", "app17.js", "app3.js", "app18.js"))
 html = f"""<!doctype html>
 <html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; font-src data:; img-src data: blob:; connect-src 'self' blob: data: https://generativelanguage.googleapis.com">

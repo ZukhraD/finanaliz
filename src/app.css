@@ -593,3 +593,70 @@ input.negv, .inp.negv { color: #D92D20 !important; }
 @media (max-height: 820px) { .steps button { padding-top: 2px !important; padding-bottom: 2px !important; } }
 select.inp.ph { color: #9aa3b5; }
 select.inp option { color: #272727; }
+
+/* ================= телефон и планшет ================= */
+.mbar, .navshade { display: none; }
+html[data-nav="drawer"] .app { grid-template-columns: 1fr; }
+html[data-nav="drawer"] .mbar { display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 40; background: var(--blue); color: #fff; padding: 10px 14px; padding-top: max(10px, env(safe-area-inset-top)); box-shadow: 0 2px 10px rgba(0,0,0,.12); }
+.mburger { width: 40px; height: 40px; border: 0; border-radius: 10px; background: rgba(255,255,255,.14); display: grid; place-content: center; gap: 5px; cursor: pointer; flex: none; }
+.mburger span { display: block; width: 20px; height: 2px; background: #fff; border-radius: 2px; }
+.mtitle { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
+.mtitle b { font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mtitle small { font-size: 12px; opacity: .8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+html[data-nav="drawer"] .rail { position: fixed !important; left: 0; top: 0; bottom: 0; height: 100% !important; width: min(86vw, 320px); z-index: 60; transform: translateX(-102%); transition: transform .22s ease; overflow-y: auto; box-shadow: 4px 0 30px rgba(0,0,0,.25); padding-top: max(16px, env(safe-area-inset-top)) !important; }
+html.navopen .rail { transform: none; }
+html[data-nav="drawer"] .navshade { position: fixed; inset: 0; background: rgba(10, 20, 50, .45); z-index: 55; }
+html.navopen[data-nav="drawer"] .navshade { display: block; }
+html[data-nav="drawer"] .steps button { padding-top: 9px !important; padding-bottom: 9px !important; font-size: 15px; }
+html[data-nav="drawer"] .rail .copy { display: block !important; }
+html[data-nav="drawer"] .main { padding: 16px 14px 60px; }
+
+/* сенсорные экраны: крупнее поля и кнопки, без увеличения страницы при вводе (iOS) */
+html[data-touch="1"] .btn { min-height: 40px; }
+html[data-touch="1"] label.f > .inp, html[data-touch="1"] label.f > select.inp { height: 44px; }
+html[data-device="phone"] .inp, html[data-device="phone"] select, html[data-device="phone"] textarea, html[data-device="phone"] input { font-size: 16px !important; }
+html[data-touch="1"] table.data td.cell input { min-height: 36px; }
+
+/* планшет */
+html[data-device="tablet"] .main { padding: 20px 20px 60px; }
+html[data-device="tablet"][data-nav="rail"] .app { grid-template-columns: 236px 1fr; }
+html[data-device="tablet"] .grid2 { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }
+
+/* телефон */
+html[data-device="phone"] h1 { font-size: 22px; }
+html[data-device="phone"] .pagehead { flex-direction: column; align-items: stretch; gap: 10px; margin-bottom: 12px; }
+html[data-device="phone"] .pagehead .lead { flex: none; }
+html[data-device="phone"] .toolbar { display: flex; flex-wrap: wrap; gap: 8px; }
+html[data-device="phone"] .toolbar .btn { flex: 1 1 calc(50% - 8px); justify-content: center; }
+html[data-device="phone"] .toolbar label.f { flex: 1 1 100%; min-width: 0 !important; }
+html[data-device="phone"] .panel { padding: 14px 12px; border-radius: 16px; }
+html[data-device="phone"] .grid2, html[data-device="phone"] .grid2.tight { grid-template-columns: 1fr !important; }
+html[data-device="phone"] .tabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+html[data-device="phone"] .tabs button { white-space: nowrap; flex: none; }
+html[data-device="phone"] .tablewrap { -webkit-overflow-scrolling: touch; margin: 0 -12px; border-radius: 0; border-left: 0; border-right: 0; }
+html[data-device="phone"] table.data td.lab, html[data-device="phone"] table.data th.lab { position: sticky; left: 0; z-index: 2; background: #fff; min-width: 150px; max-width: 46vw; white-space: normal; box-shadow: 1px 0 0 var(--rule); }
+html[data-device="phone"] table.data tr.calc td.lab { background: var(--calc-bg, #f5f5f3); }
+html[data-device="phone"] table.data thead th.lab { background: #e5e4e2; }
+html[data-device="phone"] .probs .prob, html[data-device="phone"] .prob { grid-template-columns: 1fr; }
+html[data-device="phone"] .facts { grid-template-columns: repeat(2, 1fr) !important; }
+html[data-device="phone"] .aigrid { grid-template-columns: 1fr; }
+html[data-device="phone"] dialog { width: calc(100vw - 16px); max-width: none; margin: auto 8px; }
+html[data-device="phone"] dialog .db { max-height: 70vh; padding: 8px 14px 14px; }
+html[data-device="phone"] dialog .df { flex-wrap: wrap; } html[data-device="phone"] dialog .df .btn { flex: 1 1 auto; }
+/* главная на телефоне */
+html[data-device="phone"] .home { padding: 12px; }
+html[data-device="phone"] .hbar { flex-wrap: wrap; gap: 10px; }
+html[data-device="phone"] .hbar .hnote { display: none; }
+html[data-device="phone"] .hsec { width: 100%; justify-content: space-between; }
+html[data-device="phone"] .hero { grid-template-columns: 1fr; margin: 14px 0 22px; }
+html[data-device="phone"] .hblue { padding: 24px 20px; min-height: 0; border-radius: 24px 24px 24px 0; }
+html[data-device="phone"] .hblue h1 { font-size: 28px; }
+html[data-device="phone"] .hbtn .btn { flex: 1 1 100%; justify-content: center; }
+html[data-device="phone"] .hgraph { padding: 20px; border-radius: 24px 24px 24px 0; }
+html[data-device="phone"] .crow { grid-template-columns: 1fr !important; gap: 8px; padding: 14px 4px; }
+html[data-device="phone"] .cfacts { flex-wrap: wrap; gap: 12px 18px; }
+html[data-device="phone"] .cact { justify-content: flex-start; flex-wrap: wrap; }
+html[data-device="phone"] .mlist { right: 0; left: auto; min-width: 220px; }
+/* планшет: главная */
+html[data-device="tablet"] .hero { grid-template-columns: 1.4fr 1fr; }
+html[data-device="tablet"] .crow { grid-template-columns: 1fr auto; }
