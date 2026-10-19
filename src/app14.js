@@ -276,7 +276,7 @@ function pageFc() {
   h += `<section class="panel"><h2>Прогноз движения денежных средств по кварталам</h2><div id="fcqOut">${o.err ? `<div class="prob nd"><span class="st nd">Нет данных</span><div><b>Прогноз не построен</b><p class="fix">${esc(o.err)}. Заполните эти строки на страницах «Баланс» и «ОПиУ».</p></div></div>` : fcqTable(o)}</div></section>`;
   // обоснование и динамика объёмов
   const tx = (k, l) => `<label class="f" style="margin-top:10px"><span>${l}</span><textarea class="inp" data-fcqt="${k}" style="min-height:60px">${esc(q.txt[k] || "")}</textarea></label>`;
-  const pin = (k, v) => `<input class="inp num" data-fcqp="${k}" data-pct value="${esc(isNum(v) ? fmt(v * 100, "m1") : "")}">`;
+  const pin = (k, v) => `<input class="inp num" data-fcqp="${k}" data-pct value="${esc(isNum(v) ? fmt(v * 100, "pin") : "")}">`;
   h += `<section class="panel"><h2>Обоснование выбора предполагаемого сценария прогноза движения денежных средств</h2>
     ${tx("growth", "Обоснование темпа роста выручки:")}${tx("cost", "Обоснование темпа роста себестоимости:")}${tx("fin", "Обоснование источников финансирования (вкл. объяснение любых корректировок)")}${tx("prev", "Комментарий по фактическому выполнению предыдущего бизнес-плана заёмщика")}
     <h3 style="margin-top:16px">Заложенная динамика объёмов реализации</h3>

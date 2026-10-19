@@ -794,9 +794,10 @@ function parseNum(s) {
 const nf0 = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 });
 const nf1 = new Intl.NumberFormat("ru-RU", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const nf2 = new Intl.NumberFormat("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const nfPin = new Intl.NumberFormat("ru-RU", { minimumFractionDigits: 0, maximumFractionDigits: 2 });   // ввод процентов — до сотых
 function fmt(v, kind = "m") {
   if (!isNum(v)) return v === null || v === undefined ? "" : String(v);
-  const s = kind === "x" ? nf2.format(v) + "×" : kind === "p" ? nf1.format(v * 100) + " %" : kind === "d" ? nf0.format(v) : kind === "m1" ? nf1.format(v)
+  const s = kind === "x" ? nf2.format(v) + "×" : kind === "p" ? nf1.format(v * 100) + " %" : kind === "d" ? nf0.format(v) : kind === "m1" ? nf1.format(v) : kind === "pin" ? nfPin.format(v)
     : (Math.abs(v) < 10 && v % 1 ? nf2.format(v) : nf0.format(v));
   return s.replace("-", "−");
 }
@@ -3292,7 +3293,7 @@ function pageTax() {
   if (!decl.length) return h + `<div class="empty"><h2>Декларации не загружены</h2><p class="muted">Загрузите декларации из кабинета налогоплательщика (PDF) — или введите суммы вручную, если документ отсканирован.</p><button class="btn primary" data-act="docdlg" data-mode="tax">Загрузить декларации</button></div>`;
   h += `<section class="panel"><h2>Сверка с отчётностью — ${esc(compName(k))}</h2><p class="hint">Тыс. тг. Расхождение: ${LEGEND}. Сверка выполняется, когда декларации покрывают весь период.</p>
     ${checksTable(k, TAX_IDS, "Для периодов анализа нет подходящих деклараций: проверьте год и часть периода в загруженных декларациях.")}
-    <div class="grid2 tight" style="margin-top:12px;max-width:320px"><label class="f"><span>Норма расхождений ФО и деклараций, до %</span><input class="inp num" data-dset="pct" value="${esc(fmt(N(C.dset.pct) * 100, "m1"))}"></label></div></section>`;
+    <div class="grid2 tight" style="margin-top:12px;max-width:320px"><label class="f"><span>Норма расхождений ФО и деклараций, до %</span><input class="inp num" data-dset="pct" value="${esc(fmt(N(C.dset.pct) * 100, "pin"))}"></label></div></section>`;
   const ks = Object.keys(DocParse.KEYS).filter(key => decl.some(d => d.vals && isNum(d.vals[key])));
   const sorted = decl.slice().sort((a, b) => (a.year - b.year) || String(a.part).localeCompare(String(b.part)) || String(a.form).localeCompare(String(b.form)));
   h += `<section class="panel"><h2>Декларации (${decl.length})</h2><p class="hint">Тыс. тг — суммы из деклараций переведены из тенге автоматически.</p><div class="tablewrap" style="max-height:none"><table class="data"><thead><tr><th class="lab">Форма</th><th>Период</th>${ks.map(key => `<th>${esc(DocParse.KEYS[key].t)}</th>`).join("")}<th></th></tr></thead><tbody>
@@ -3312,7 +3313,7 @@ function pageBank() {
   if (!bank.length) return h + `<div class="empty"><h2>Выписки и справки не загружены</h2><p class="muted">Загрузите выписки по счетам (PDF или Excel из интернет-банка) — по ним считаются чистые кредитовые обороты. Справки об оборотах дают только общие обороты, без исключений.</p><button class="btn primary" data-act="docdlg" data-mode="bank">Загрузить выписки и справки</button></div>`;
   h += `<section class="panel"><h2>Сверка с отчётностью — ${esc(compName(k))}</h2><p class="hint">Тыс. тг. ${LEGEND}. Доля чистых оборотов в выручке с НДС: 80–150 % — норма.</p>
     ${checksTable(k, BANK_IDS, "Для периодов анализа нет оборотов: проверьте месяцы в выписках и справках или заполните выручку в ОПиУ.")}
-    <div class="grid2 tight" style="margin-top:12px;max-width:420px"><label class="f"><span>Допуск сверки с ОДДС, %</span><input class="inp num" data-dset="bpct" value="${esc(fmt(N(C.dset.bpct) * 100, "m1"))}"></label></div>
+    <div class="grid2 tight" style="margin-top:12px;max-width:420px"><label class="f"><span>Допуск сверки с ОДДС, %</span><input class="inp num" data-dset="bpct" value="${esc(fmt(N(C.dset.bpct) * 100, "pin"))}"></label></div>
     ${nComp() > 1 ? `<label style="display:block;margin-top:10px"><input type="checkbox" data-grpex ${C.dset.grpEx !== false ? "checked" : ""}> Исключать поступления от других компаний группы (по БИН из «Карточки»)</label>` : ""}</section>`;
   // помесячно
   const M = bankMonths(k), ms = Object.keys(M).sort();
@@ -3866,7 +3867,7 @@ function pageCredit() {
       ${s.nofx ? `<p class="hint">Валютные займы без курса: ${s.nofx} — укажите курс на странице «Банк».</p>` : ""}</section>`;
     const row = x => `<tr><td class="lab">${esc(x.creditor || "—")}<span class="formula">${esc([x.type, x.role, x.num].filter(Boolean).join(" · "))}${x.src ? " · " + esc(x.src) : ""}</span></td>
       <td>${fmt(N(x.amount) / 1000)}${x.cur && x.cur !== "KZT" ? " " + esc(x.cur) : ""}</td><td>${fmt(N(x.bal) / 1000)}</td>
-      <td class="cell"><input class="inp num" data-cr="${x.id}" data-f="rate" data-pct value="${isNum(x.rate) ? esc(fmt(x.rate * 100, "m1")) : ""}" placeholder="—"></td>
+      <td class="cell"><input class="inp num" data-cr="${x.id}" data-f="rate" data-pct value="${isNum(x.rate) ? esc(fmt(x.rate * 100, "pin")) : ""}" placeholder="—"></td>
       <td>${esc(x.end ? x.end.split("-").reverse().join(".") : "—")}<span class="formula">${isNum(monthsLeft(x.end)) ? monthsLeft(x.end) + " мес." : ""}</span></td>
       <td>${fmt(N(x.pay) / 1000)}</td><td class="${N(x.odDays) > 0 ? "v risk" : ""}">${N(x.odDays) ? x.odDays + " дн." : "—"}${N(x.maxOd) ? `<span class="formula">макс. ${x.maxOd}</span>` : ""}</td>
       <td><select class="inp" data-cr="${x.id}" data-f="scheme">${opts(Object.keys(SCH), x.scheme || "Дифференцированный")}</select></td>
@@ -3894,7 +3895,7 @@ function pageColl() {
   h += `<section class="panel"><h2>Обеспечение (залог)</h2><p class="hint">Рыночная стоимость — по отчёту об оценке, тыс. тг. Дисконт подставляется по виду залога, его можно изменить. Покрытие сравнивается с запрашиваемой суммой на «Карточке» (${isNum(C.card.amount) ? fmt(C.card.amount) + " тыс. тг" : "не указана"}).</p>
     <div class="tablewrap" style="max-height:none"><datalist id="collOwners">${C.companies.map((x, j) => ({ n: compName(j + 1), r: compRoles(x) })).sort((a, b) => (b.r.includes("Залогодатель") || b.r.includes("Гарант")) - (a.r.includes("Залогодатель") || a.r.includes("Гарант"))).map(o => `<option value="${esc(o.n)}">${esc(o.r.join(", "))}</option>`).join("")}${(C.guar || []).filter(g => g.name).map(g => `<option value="${esc(g.name)}">${esc(g.kind || "")}</option>`).join("")}</datalist><table class="data coll"><thead><tr><th class="lab">Вид</th><th style="text-align:left">Описание</th><th style="text-align:left">Залогодатель</th><th>Рыночная стоимость</th><th>Дисконт, %</th><th>Залоговая стоимость</th><th></th></tr></thead><tbody>
     ${C.coll.map((x, i) => `<tr><td class="lab"><select class="inp" data-coll="${i}" data-f="type">${opts(Object.keys(COLL_TYPES), x.type)}</select></td><td class="cell"><input class="inp" data-coll="${i}" data-f="desc" value="${esc(x.desc || "")}" style="text-align:left"></td><td class="cell"><input class="inp" data-coll="${i}" data-f="owner" list="collOwners" value="${esc(x.owner || "")}" style="text-align:left" placeholder="${/^Гарантия/.test(x.type) ? "гарант" : "залогодатель"}"></td>
-      <td class="cell"><input class="inp num" data-coll="${i}" data-f="market" value="${esc(fmt(x.market))}"></td><td class="cell"><input class="inp num" data-coll="${i}" data-f="disc" data-pct value="${esc(fmt(N(x.disc) * 100, "m1"))}"></td><td>${fmt(N(x.market) * (1 - N(x.disc)))}</td><td><button class="btn ghost danger" data-colldel="${i}" aria-label="Удалить">×</button></td></tr>`).join("")}
+      <td class="cell"><input class="inp num" data-coll="${i}" data-f="market" value="${esc(fmt(x.market))}"></td><td class="cell"><input class="inp num" data-coll="${i}" data-f="disc" data-pct value="${esc(fmt(N(x.disc) * 100, "pin"))}"></td><td>${fmt(N(x.market) * (1 - N(x.disc)))}</td><td><button class="btn ghost danger" data-colldel="${i}" aria-label="Удалить">×</button></td></tr>`).join("")}
     ${cv ? `<tr class="calc"><td class="lab">Итого</td><td></td><td></td><td>${fmt(cv.mk)}</td><td></td><td>${fmt(cv.coll)}</td><td></td></tr>` : ""}</tbody></table></div>
     <p style="margin-top:8px"><button class="btn" data-act="colladd">Добавить залог</button></p>
     ${cv && isNum(cv.cover) ? `<div class="facts" style="margin-top:12px"><div><span>Покрытие запроса залогом</span><b class="${cv.cover < 1 ? "neg" : ""}">${pctFmt(cv.cover)}</b><span>залоговая стоимость / запрос</span></div><div><span>LTV</span><b>${pctFmt(cv.ltv)}</b><span>запрос / залоговая стоимость</span></div></div>` : ""}</section>`;
@@ -3936,7 +3937,7 @@ async function creditEditor(x, isNew) {
     <label class="f"><span>Роль</span><select class="inp" data-ce="role">${opts(["Заемщик", "Созаемщик", "Гарант", "Залогодатель"], x.role || "Заемщик")}</select></label>
     <label class="f"><span>Статус</span><select class="inp" data-ce="status">${[["active", "действует"], ["closed", "завершён"]].map(([v, t]) => `<option value="${v}"${x.status === v ? " selected" : ""}>${t}</option>`).join("")}</select></label>
     ${f("amount", "Сумма договора, тыс. тг", K1(x.amount), 'inputmode="decimal"')}${f("bal", "Остаток долга, тыс. тг", K1(x.bal), 'inputmode="decimal"')}${f("pay", "Платёж в месяц, тыс. тг", K1(x.pay), 'inputmode="decimal"')}
-    ${f("rate", "Ставка, % годовых", isNum(x.rate) ? fmt(x.rate * 100, "m1") : "")}<label class="f"><span>Дата выдачи</span><input class="inp" type="date" data-ce="start" value="${esc(x.start || "")}"></label><label class="f"><span>Дата погашения</span><input class="inp" type="date" data-ce="end" value="${esc(x.end || "")}"></label>
+    ${f("rate", "Ставка, % годовых", isNum(x.rate) ? fmt(x.rate * 100, "pin") : "")}<label class="f"><span>Дата выдачи</span><input class="inp" type="date" data-ce="start" value="${esc(x.start || "")}"></label><label class="f"><span>Дата погашения</span><input class="inp" type="date" data-ce="end" value="${esc(x.end || "")}"></label>
     ${f("odDays", "Текущая просрочка, дней", x.odDays)}${f("maxOd", "Максимальная просрочка, дней", x.maxOd)}<label class="f"><span>Валюта</span><select class="inp" data-ce="cur">${opts(CURS, x.cur || "KZT")}</select></label></div>`;
   const res = await dialog(isNew ? "Новый кредит" : "Кредит", body, [{ t: "Отменить", v: null }, { t: "Сохранить", primary: true, v: d => { const o = {}; d.querySelectorAll("[data-ce]").forEach(e => (o[e.dataset.ce] = e.value)); return o; } }]);
   if (!res) return null;
@@ -5444,7 +5445,7 @@ function pageFc() {
   h += `<section class="panel"><h2>Прогноз движения денежных средств по кварталам</h2><div id="fcqOut">${o.err ? `<div class="prob nd"><span class="st nd">Нет данных</span><div><b>Прогноз не построен</b><p class="fix">${esc(o.err)}. Заполните эти строки на страницах «Баланс» и «ОПиУ».</p></div></div>` : fcqTable(o)}</div></section>`;
   // обоснование и динамика объёмов
   const tx = (k, l) => `<label class="f" style="margin-top:10px"><span>${l}</span><textarea class="inp" data-fcqt="${k}" style="min-height:60px">${esc(q.txt[k] || "")}</textarea></label>`;
-  const pin = (k, v) => `<input class="inp num" data-fcqp="${k}" data-pct value="${esc(isNum(v) ? fmt(v * 100, "m1") : "")}">`;
+  const pin = (k, v) => `<input class="inp num" data-fcqp="${k}" data-pct value="${esc(isNum(v) ? fmt(v * 100, "pin") : "")}">`;
   h += `<section class="panel"><h2>Обоснование выбора предполагаемого сценария прогноза движения денежных средств</h2>
     ${tx("growth", "Обоснование темпа роста выручки:")}${tx("cost", "Обоснование темпа роста себестоимости:")}${tx("fin", "Обоснование источников финансирования (вкл. объяснение любых корректировок)")}${tx("prev", "Комментарий по фактическому выполнению предыдущего бизнес-плана заёмщика")}
     <h3 style="margin-top:16px">Заложенная динамика объёмов реализации</h3>
@@ -6582,7 +6583,7 @@ const FC_PCT = new Set(["growth", "shock", "gm_adj", "infl", "capex_pct", "overr
 const FC_LAB = { growth: "Рост выручки, % в год", shock: "Шок выручки, %", gm_adj: "Изменение валовой маржи, п.п.", infl: "Рост операционных расходов, % в год",
   dso_adj: "Изменение оборачиваемости ДЗ, дней", dio_adj: "Изменение оборачиваемости запасов, дней", dpo_adj: "Изменение оборачиваемости КЗ, дней",
   capex_pct: "Поддерживающие капвложения, % выручки", overrun: "Удорожание инвестпроектов, %", rshock: "Рост ставок по кредитам, п.п.", buffer: "Минимальный остаток денег, тыс. тг" };
-const fcIn = (path, v, pct) => `<input class="inp num" data-fc="${path}" ${pct ? "data-pct" : ""} value="${esc(isNum(v) ? fmt(pct ? v * 100 : v, pct ? "m1" : "m") : (v ?? ""))}">`;
+const fcIn = (path, v, pct) => `<input class="inp num" data-fc="${path}" ${pct ? "data-pct" : ""} value="${esc(isNum(v) ? fmt(pct ? v * 100 : v, pct ? "pin" : "m") : (v ?? ""))}">`;
 function pageCons() {
   const pers = C.periods, f = fcParams();
   let h = `<div class="pagehead"><div class="lead"><h1>Свод группы</h1><p>Группа = сумма компаний за вычетом внутригрупповых операций.</p></div>
@@ -6758,7 +6759,7 @@ function pageLog() {
 function pageNorms() {
   const keys = Object.keys(RAT).filter(k => RAT[k].dir && RAT_DEF[k] && RAT_DEF[k].green !== null && RAT_DEF[k].green !== undefined);
   const kd = k => KIND[k] === "p" ? "p" : KIND[k] === "d" ? "d" : "x";
-  const show = (k, v) => (v === null || v === undefined ? "" : kd(k) === "p" ? nf1.format(v * 100) : kd(k) === "d" ? nf0.format(v) : nf2.format(v));
+  const show = (k, v) => (v === null || v === undefined ? "" : kd(k) === "p" ? nfPin.format(v * 100) : kd(k) === "d" ? nf0.format(v) : nf2.format(v));
   const unit = k => (kd(k) === "p" ? "%" : kd(k) === "d" ? "дней" : "×");
   return `<div class="pagehead"><div class="lead"><h1>Нормативы коэффициентов</h1><p>Пороги, по которым коэффициенты окрашиваются: «норма» (не хуже зелёного порога), «требует проверки» (до красного), «риск» и «критический риск». Свои значения действуют для всех клиентов в этом браузере. Пустая ячейка — значение по умолчанию.</p></div>
     <div class="toolbar"><button class="btn ghost" data-act="normsreset">Вернуть все по умолчанию</button></div></div>
@@ -6916,7 +6917,7 @@ document.addEventListener("change", e => {
     const last = path[path.length - 1];
     if (d.numsel !== undefined) { o[last] = +t.value; touch(); render(); return; }
     if (t.tagName === "SELECT" || last === "name") o[last] = t.value;
-    else { let v = parseNum(t.value); if (v === null) { toast("Не число: «" + t.value + "»"); return; } if (d.pct !== undefined) v = v / 100; o[last] = v; t.value = fmt(d.pct !== undefined ? v * 100 : v, d.pct !== undefined ? "m1" : "m"); }
+    else { let v = parseNum(t.value); if (v === null) { toast("Не число: «" + t.value + "»"); return; } if (d.pct !== undefined) v = v / 100; o[last] = v; t.value = fmt(d.pct !== undefined ? v * 100 : v, d.pct !== undefined ? "pin" : "m"); }
     touch(); refreshCalc(); return;
   }
   if (d.elimok) { C.elimOk[d.elimok] = t.checked; touch(); refreshCalc(); return; }

@@ -269,7 +269,7 @@ function pageTax() {
   if (!decl.length) return h + `<div class="empty"><h2>Декларации не загружены</h2><p class="muted">Загрузите декларации из кабинета налогоплательщика (PDF) — или введите суммы вручную, если документ отсканирован.</p><button class="btn primary" data-act="docdlg" data-mode="tax">Загрузить декларации</button></div>`;
   h += `<section class="panel"><h2>Сверка с отчётностью — ${esc(compName(k))}</h2><p class="hint">Тыс. тг. Расхождение: ${LEGEND}. Сверка выполняется, когда декларации покрывают весь период.</p>
     ${checksTable(k, TAX_IDS, "Для периодов анализа нет подходящих деклараций: проверьте год и часть периода в загруженных декларациях.")}
-    <div class="grid2 tight" style="margin-top:12px;max-width:320px"><label class="f"><span>Норма расхождений ФО и деклараций, до %</span><input class="inp num" data-dset="pct" value="${esc(fmt(N(C.dset.pct) * 100, "m1"))}"></label></div></section>`;
+    <div class="grid2 tight" style="margin-top:12px;max-width:320px"><label class="f"><span>Норма расхождений ФО и деклараций, до %</span><input class="inp num" data-dset="pct" value="${esc(fmt(N(C.dset.pct) * 100, "pin"))}"></label></div></section>`;
   const ks = Object.keys(DocParse.KEYS).filter(key => decl.some(d => d.vals && isNum(d.vals[key])));
   const sorted = decl.slice().sort((a, b) => (a.year - b.year) || String(a.part).localeCompare(String(b.part)) || String(a.form).localeCompare(String(b.form)));
   h += `<section class="panel"><h2>Декларации (${decl.length})</h2><p class="hint">Тыс. тг — суммы из деклараций переведены из тенге автоматически.</p><div class="tablewrap" style="max-height:none"><table class="data"><thead><tr><th class="lab">Форма</th><th>Период</th>${ks.map(key => `<th>${esc(DocParse.KEYS[key].t)}</th>`).join("")}<th></th></tr></thead><tbody>
@@ -289,7 +289,7 @@ function pageBank() {
   if (!bank.length) return h + `<div class="empty"><h2>Выписки и справки не загружены</h2><p class="muted">Загрузите выписки по счетам (PDF или Excel из интернет-банка) — по ним считаются чистые кредитовые обороты. Справки об оборотах дают только общие обороты, без исключений.</p><button class="btn primary" data-act="docdlg" data-mode="bank">Загрузить выписки и справки</button></div>`;
   h += `<section class="panel"><h2>Сверка с отчётностью — ${esc(compName(k))}</h2><p class="hint">Тыс. тг. ${LEGEND}. Доля чистых оборотов в выручке с НДС: 80–150 % — норма.</p>
     ${checksTable(k, BANK_IDS, "Для периодов анализа нет оборотов: проверьте месяцы в выписках и справках или заполните выручку в ОПиУ.")}
-    <div class="grid2 tight" style="margin-top:12px;max-width:420px"><label class="f"><span>Допуск сверки с ОДДС, %</span><input class="inp num" data-dset="bpct" value="${esc(fmt(N(C.dset.bpct) * 100, "m1"))}"></label></div>
+    <div class="grid2 tight" style="margin-top:12px;max-width:420px"><label class="f"><span>Допуск сверки с ОДДС, %</span><input class="inp num" data-dset="bpct" value="${esc(fmt(N(C.dset.bpct) * 100, "pin"))}"></label></div>
     ${nComp() > 1 ? `<label style="display:block;margin-top:10px"><input type="checkbox" data-grpex ${C.dset.grpEx !== false ? "checked" : ""}> Исключать поступления от других компаний группы (по БИН из «Карточки»)</label>` : ""}</section>`;
   // помесячно
   const M = bankMonths(k), ms = Object.keys(M).sort();

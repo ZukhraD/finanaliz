@@ -35,9 +35,10 @@ function parseNum(s) {
 const nf0 = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 });
 const nf1 = new Intl.NumberFormat("ru-RU", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const nf2 = new Intl.NumberFormat("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const nfPin = new Intl.NumberFormat("ru-RU", { minimumFractionDigits: 0, maximumFractionDigits: 2 });   // ввод процентов — до сотых
 function fmt(v, kind = "m") {
   if (!isNum(v)) return v === null || v === undefined ? "" : String(v);
-  const s = kind === "x" ? nf2.format(v) + "×" : kind === "p" ? nf1.format(v * 100) + " %" : kind === "d" ? nf0.format(v) : kind === "m1" ? nf1.format(v)
+  const s = kind === "x" ? nf2.format(v) + "×" : kind === "p" ? nf1.format(v * 100) + " %" : kind === "d" ? nf0.format(v) : kind === "m1" ? nf1.format(v) : kind === "pin" ? nfPin.format(v)
     : (Math.abs(v) < 10 && v % 1 ? nf2.format(v) : nf0.format(v));
   return s.replace("-", "−");
 }

@@ -212,7 +212,7 @@ const FC_PCT = new Set(["growth", "shock", "gm_adj", "infl", "capex_pct", "overr
 const FC_LAB = { growth: "Рост выручки, % в год", shock: "Шок выручки, %", gm_adj: "Изменение валовой маржи, п.п.", infl: "Рост операционных расходов, % в год",
   dso_adj: "Изменение оборачиваемости ДЗ, дней", dio_adj: "Изменение оборачиваемости запасов, дней", dpo_adj: "Изменение оборачиваемости КЗ, дней",
   capex_pct: "Поддерживающие капвложения, % выручки", overrun: "Удорожание инвестпроектов, %", rshock: "Рост ставок по кредитам, п.п.", buffer: "Минимальный остаток денег, тыс. тг" };
-const fcIn = (path, v, pct) => `<input class="inp num" data-fc="${path}" ${pct ? "data-pct" : ""} value="${esc(isNum(v) ? fmt(pct ? v * 100 : v, pct ? "m1" : "m") : (v ?? ""))}">`;
+const fcIn = (path, v, pct) => `<input class="inp num" data-fc="${path}" ${pct ? "data-pct" : ""} value="${esc(isNum(v) ? fmt(pct ? v * 100 : v, pct ? "pin" : "m") : (v ?? ""))}">`;
 function pageCons() {
   const pers = C.periods, f = fcParams();
   let h = `<div class="pagehead"><div class="lead"><h1>Свод группы</h1><p>Группа = сумма компаний за вычетом внутригрупповых операций.</p></div>
@@ -388,7 +388,7 @@ function pageLog() {
 function pageNorms() {
   const keys = Object.keys(RAT).filter(k => RAT[k].dir && RAT_DEF[k] && RAT_DEF[k].green !== null && RAT_DEF[k].green !== undefined);
   const kd = k => KIND[k] === "p" ? "p" : KIND[k] === "d" ? "d" : "x";
-  const show = (k, v) => (v === null || v === undefined ? "" : kd(k) === "p" ? nf1.format(v * 100) : kd(k) === "d" ? nf0.format(v) : nf2.format(v));
+  const show = (k, v) => (v === null || v === undefined ? "" : kd(k) === "p" ? nfPin.format(v * 100) : kd(k) === "d" ? nf0.format(v) : nf2.format(v));
   const unit = k => (kd(k) === "p" ? "%" : kd(k) === "d" ? "дней" : "×");
   return `<div class="pagehead"><div class="lead"><h1>Нормативы коэффициентов</h1><p>Пороги, по которым коэффициенты окрашиваются: «норма» (не хуже зелёного порога), «требует проверки» (до красного), «риск» и «критический риск». Свои значения действуют для всех клиентов в этом браузере. Пустая ячейка — значение по умолчанию.</p></div>
     <div class="toolbar"><button class="btn ghost" data-act="normsreset">Вернуть все по умолчанию</button></div></div>
@@ -546,7 +546,7 @@ document.addEventListener("change", e => {
     const last = path[path.length - 1];
     if (d.numsel !== undefined) { o[last] = +t.value; touch(); render(); return; }
     if (t.tagName === "SELECT" || last === "name") o[last] = t.value;
-    else { let v = parseNum(t.value); if (v === null) { toast("Не число: «" + t.value + "»"); return; } if (d.pct !== undefined) v = v / 100; o[last] = v; t.value = fmt(d.pct !== undefined ? v * 100 : v, d.pct !== undefined ? "m1" : "m"); }
+    else { let v = parseNum(t.value); if (v === null) { toast("Не число: «" + t.value + "»"); return; } if (d.pct !== undefined) v = v / 100; o[last] = v; t.value = fmt(d.pct !== undefined ? v * 100 : v, d.pct !== undefined ? "pin" : "m"); }
     touch(); refreshCalc(); return;
   }
   if (d.elimok) { C.elimOk[d.elimok] = t.checked; touch(); refreshCalc(); return; }
